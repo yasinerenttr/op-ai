@@ -2,6 +2,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import express from 'express';
 import QRCode from 'qrcode';
@@ -767,6 +768,41 @@ async function startWhatsApp() {
         // 2) PATRON EREN'İN KENDİ "SİZ" SOHBETİ KOMUTA MERKEZİ VEYA KENDİ ATTIĞI MESAJLAR:
         if (msg.key?.fromMe || isSelfChat) {
           if (msgId && botSentMsgIds.has(msgId)) continue;
+
+          // 🎤 YENİ: Patron "Siz" sohbetine SES KAYDI (Voice Note) attığında sesini dinle, yazıya çevir ve her dediğini yap!
+          const innerMsg =
+            msg.message?.ephemeralMessage?.message ||
+            msg.message?.viewOnceMessage?.message ||
+            msg.message;
+          if (isSelfChat && innerMsg?.audioMessage) {
+            try {
+              console.log('🎙️ Patron Eren "Siz" sohbetinden Sesli Talimat gönderdi, indiriliyor...');
+              const audioBuf = await downloadMediaMessage(msg, 'buffer', {});
+              if (audioBuf && audioBuf.length > 0) {
+                stateData.gemiTasks = stateData.gemiTasks || [];
+                const taskObj = {
+                  id: 'GEMI-VOICE-' + Date.now(),
+                  prompt: '__VOICE_NOTE__',
+                  audioBase64: audioBuf.toString('base64'),
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                };
+                stateData.gemiTasks.push(taskObj);
+                if (stateData.gemiTasks.length > 30) {
+                  stateData.gemiTasks = stateData.gemiTasks.slice(-30);
+                }
+                saveData();
+                await notifyOwnerSelfChat(
+                  `🎙️ *SESLİ EMİR ALINDI PATRON!* 🧠\n\n` +
+                  `⏳ Ses kaydın çözümleniyor ve Mac bilgisayarına / Gemi ajanına uygulanıyor...`
+                );
+              }
+            } catch (vErr) {
+              console.error('Sesli talimat indirme hatası:', vErr.message);
+            }
+            continue;
+          }
+
           if (!extractedText) continue;
 
           const trimmedRaw = extractedText.trim().replace(/^\.\s+/, '.');
@@ -1048,9 +1084,27 @@ async function startWhatsApp() {
               continue;
             }
 
-            // 5.5 ".ses kiz" | ".ses erkek" | ".ses test" -> Neural HD Stüdyo Sesini Değiştir & Canlı Dinle
+            // 5.5 ".ses" -> Sesli Emir Dinleme Modu | ".ses kiz" / ".ses erkek" -> Ses Değiştirme
             if (myText === '.ses' || myText.startsWith('.ses ')) {
               const arg = myText.replace('.ses', '').trim();
+              if (!arg) {
+                await notifyOwnerSelfChat(
+                  `🎙️ *SESLİ EMİR DİNLEME MODU AKTİF PATRON!* 👑\n\n` +
+                  `Şimdi mikrofona basıp *Ses Kaydı (🎤)* atarak istediğin her şeyi söyleyebilirsin!\n\n` +
+                  `💡 *Örnek Sesli Emirler:*\n` +
+                  `• _"Bilgisayarı aç"_\n` +
+                  `• _"YouTube'dan Barış Manço Dönence aç"_\n` +
+                  `• _"Uyku moduna geç"_\n` +
+                  `• _"Sesi fulle"_ / _"Sesi kıs"_\n` +
+                  `• _"NeYapsak uygulamasında şunu güncelle"_\n\n` +
+                  `👂 Seni dinliyorum Patron, ses kaydını gönderebilirsin!`
+                );
+                await sendVoiceNote(
+                  '905525222988@s.whatsapp.net',
+                  'Sizi dinliyorum Eren Bey. Ses kaydı göndererek istediğiniz emri verebilirsiniz.'
+                );
+                continue;
+              }
               if (arg === 'erkek' || arg === 'ahmet') {
                 stateData.voiceProfile = 'ahmet';
                 saveData();
@@ -1064,12 +1118,7 @@ async function startWhatsApp() {
               const activeProf = VOICE_PROFILES[stateData.voiceProfile || 'emel'] || VOICE_PROFILES.emel;
               await notifyOwnerSelfChat(
                 `🎙️ *AVELON NEURAL HD STÜDYO SESİ AKTİF*\n\n` +
-                `🗣️ *Seçili Ses:* *${activeProf.label}*\n` +
-                `💡 Değiştirmek için:\n` +
-                `• *.ses kiz* -> Emel HD (Kadın Yönetici Sekreter)\n` +
-                `• *.ses erkek* -> Ahmet HD (Erkek Yönetici Asistan)\n` +
-                `• *.ses test* -> Örnek sesli not gönderir\n\n` +
-                `⏳ Şimdi yeni sesimle canlı örnek kaydı gönderiyorum Patron...`
+                `🗣️ *Seçili Ses:* *${activeProf.label}*`
               );
               await sendVoiceNote(
                 '905525222988@s.whatsapp.net',
