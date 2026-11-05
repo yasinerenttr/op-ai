@@ -845,9 +845,221 @@ async function startWhatsApp() {
             myText.startsWith('.mod ') ||
             myText === '.ses' ||
             myText.startsWith('.ses ') ||
+            myText === '.admin' ||
+            myText.startsWith('.admin ') ||
+            myText.startsWith('.qres') ||
             myText.startsWith('.hatirlat ') ||
             myText.startsWith('.hatırlat ')
           ) {
+            // 0-JARVIS: ".admin", ".admin qres tantavi", ".admin bildirim Başlık | Mesaj" -> TONY STARK SÜPER ADMİN KOMUTA MERKEZİ!
+            if (myText === '.admin' || myText.startsWith('.admin ') || myText === '.qres' || myText.startsWith('.qres ')) {
+              const rawSub = trimmedRaw.replace(/^\.(?:admin|qres)\s*/i, '').trim();
+              const subLow = rawSub.toLocaleLowerCase('tr-TR');
+              const NEYAPSAK_API = 'https://jellyfish-app-oydmg.ondigitalocean.app/api/admin';
+              const NEYAPSAK_KEY = 'neyapsak_admin_secret_key_2026_secure';
+              const QRES_API = 'https://web-production-b7541.up.railway.app/api/super';
+              const QRES_KEY = 'neyapsak_super_admin_secret';
+
+              try {
+                // Alt Komut 1: ".admin bildirim Başlık | Mesaj" -> Tüm NeYapsak kullanıcılarına Push Bildirim at!
+                if (subLow.startsWith('bildirim ')) {
+                  const payloadStr = rawSub.replace(/^bildirim\s+/i, '').trim();
+                  const [titlePart, ...bodyParts] = payloadStr.split('|');
+                  const title = bodyParts.length > 0 ? titlePart.trim() : 'NeYapsak Duyuru 🚀';
+                  const message = bodyParts.length > 0 ? bodyParts.join('|').trim() : titlePart.trim();
+                  const pushRes = await fetch(`${NEYAPSAK_API}/notifications/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-admin-key': NEYAPSAK_KEY },
+                    body: JSON.stringify({ title, message, target: 'all' }),
+                  });
+                  const pushData = await pushRes.json().catch(() => ({}));
+                  await notifyOwnerSelfChat(
+                    `📢 *NEYAPSAK SÜPER ADMİN PUSH BİLDİRİMİ GÖNDERİLDİ!* 🚀\n\n` +
+                    `📌 *Başlık:* ${title}\n` +
+                    `💬 *Mesaj:* ${message}\n` +
+                    `✅ *Durum:* Tüm kullanıcılara iletildi!`
+                  );
+                  await sendVoiceNote(
+                    '905525222988@s.whatsapp.net',
+                    `Eren Bey, NeYapsak süper admin üzerinden tüm kullanıcılara bildirim başarıyla gönderildi.`
+                  );
+                  continue;
+                }
+
+                // Alt Komut 2: ".admin qres tantavi" veya ".admin tantavi" -> Belirli bir QRes mekanının TÜM verilerini getir!
+                const venueQuery = subLow.replace(/^qres\s*/i, '').trim();
+                if (venueQuery && venueQuery !== 'neyapsak') {
+                  const restRes = await fetch(`${QRES_API}/restaurants`, {
+                    headers: { 'x-admin-secret': QRES_KEY },
+                  });
+                  const restJson = await restRes.json();
+                  const restaurants = restJson.data || [];
+
+                  // Bulanık (Fuzzy) eşleştirme: "tanatavi", "tantavi", "muamma", "2arti2" vb.
+                  const normalizeSlug = (s) =>
+                    String(s || '')
+                      .toLocaleLowerCase('tr-TR')
+                      .replace(/ı/g, 'i')
+                      .replace(/ğ/g, 'g')
+                      .replace(/ü/g, 'u')
+                      .replace(/ş/g, 's')
+                      .replace(/ö/g, 'o')
+                      .replace(/ç/g, 'c')
+                      .replace(/[^a-z0-9]/g, '');
+
+                  const qNorm = normalizeSlug(venueQuery);
+                  const matched = restaurants.find((r) => {
+                    const nNorm = normalizeSlug(r.name);
+                    const sNorm = normalizeSlug(r.slug);
+                    if (nNorm.includes(qNorm) || sNorm.includes(qNorm) || qNorm.includes(nNorm)) return true;
+                    // "tanatavi" -> "tantavi" typo toleransı
+                    if ((qNorm.includes('tanatav') || qNorm.includes('tantav')) && nNorm.includes('tantav')) return true;
+                    return false;
+                  });
+
+                  if (!matched) {
+                    const allList = restaurants
+                      .map((r, i) => `${i + 1}. *${r.name}* — 📲 ${r.totalQrScans || 0} QR | 💰 ${r.totalRevenue || 0} ₺`)
+                      .join('\n');
+                    await notifyOwnerSelfChat(
+                      `🔍 *"${venueQuery}"* adında bir QRes mekanı bulunamadı Patron.\n\n` +
+                      `🍽️ *Sistemdeki Aktif QRes Mekanları:*\n${allList}\n\n` +
+                      `💡 Örnek: *.admin qres tantavi* veya *.admin qres muamma*`
+                    );
+                    continue;
+                  }
+
+                  // Detaylı veriyi çek (/api/super/restaurants/:id/details)
+                  const detRes = await fetch(`${QRES_API}/restaurants/${matched._id}/details`, {
+                    headers: { 'x-admin-secret': QRES_KEY },
+                  });
+                  const detJson = await detRes.json();
+                  const det = detJson.data || {};
+                  const restObj = det.restaurant || matched;
+
+                  const totalScans = restObj.totalQrScans ?? matched.totalQrScans ?? 0;
+                  const dailyMap = restObj.dailyQrScans || {};
+                  const dailyEntries = Object.entries(dailyMap).sort((a, b) => b[0].localeCompare(a[0]));
+                  const todayKey = new Date().toISOString().slice(0, 10);
+                  const todayScans = dailyMap[todayKey] ?? (dailyEntries[0] ? dailyEntries[0][1] : 0);
+
+                  // En yüksek okutma yapılan rekor gün
+                  let peakDay = '-';
+                  let peakCount = 0;
+                  for (const [dKey, cnt] of Object.entries(dailyMap)) {
+                    if (Number(cnt) > peakCount) {
+                      peakCount = Number(cnt);
+                      peakDay = dKey;
+                    }
+                  }
+
+                  const recentDaysText =
+                    dailyEntries.length > 0
+                      ? dailyEntries
+                          .slice(0, 7)
+                          .map(([dateStr, cnt]) => `  • 📅 *${dateStr}:* ${cnt} kişi QR okuttu`)
+                          .join('\n')
+                      : '  • Henüz günlük döküm kaydı yok';
+
+                  const lastScanStr = restObj.lastScannedAt
+                    ? new Date(restObj.lastScannedAt).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })
+                    : 'Bilinmiyor';
+
+                  const totalRev = det.totalRevenue ?? matched.totalRevenue ?? 0;
+                  const todayRev = matched.todayRevenue ?? 0;
+                  const totalOrd = det.totalOrders ?? 0;
+                  const todayOrd = det.todayOrders ?? matched.todayOrderCount ?? 0;
+                  const waiterCnt = det.waiterCount ?? 0;
+                  const ratings = det.ratings || [];
+                  const avgRating =
+                    ratings.length > 0
+                      ? (ratings.reduce((acc, r) => acc + (Number(r.rating) || 5), 0) / ratings.length).toFixed(1)
+                      : '5.0';
+
+                  const reportMsg =
+                    `🦾 *JARVIS QRES SÜPER ADMİN — MEKAN İSTİHBARAT RAPORU* 📊\n\n` +
+                    `🏛️ *Mekan:* *${restObj.name}*\n` +
+                    `🟢 *Durum:* ${restObj.isActive ? 'Aktif' : 'Pasif'} | ${restObj.isOpen ? 'Şu An Açık' : 'Kapalı'}\n` +
+                    `📍 *Adres:* ${restObj.address || 'Belirtilmedi'}\n\n` +
+                    `📲 *QR MENÜ OKUTMA VERİLERİ:*\n` +
+                    `• 🔥 *TOPLAM QR OKUTAN KİŞİ:* *${totalScans.toLocaleString('tr-TR')} Kişi*\n` +
+                    `• 📅 *Son Günde Okutan:* *${todayScans} Kişi*\n` +
+                    `• 🏆 *Rekor Gün:* *${peakDay}* (*${peakCount} Kişi*)\n` +
+                    `• 🕒 *Son QR Okutma Saati:* ${lastScanStr}\n\n` +
+                    `📈 *SON 7 GÜNÜN QR OKUTMA DÖKÜMÜ:*\n${recentDaysText}\n\n` +
+                    `💰 *FİNANS & SİPARİŞ VERİLERİ:*\n` +
+                    `• 💵 *Toplam Ciro:* *${totalRev.toLocaleString('tr-TR')} ₺* (${totalOrd} Sipariş)\n` +
+                    `• 🌅 *Bugünkü Ciro:* *${todayRev.toLocaleString('tr-TR')} ₺* (${todayOrd} Sipariş)\n` +
+                    `• 👨‍🍳 *Kayıtlı Personel/Garson:* ${waiterCnt} Kişi\n` +
+                    `• ⭐ *Müşteri Puanı:* ${avgRating} / 5.0 (${ratings.length} Değerlendirme)`;
+
+                  await notifyOwnerSelfChat(reportMsg);
+                  await sendVoiceNote(
+                    '905525222988@s.whatsapp.net',
+                    `Eren Bey, ${restObj.name} verilerini getirdim. Şu ana kadar toplam ${totalScans} kişi QR menüyü okutmuş. Son günde ${todayScans} kişi okutma yapmış. Mekanın toplam cirosu ${totalRev} Türk Lirası ve toplam ${totalOrd} sipariş kaydedilmiş.`
+                  );
+                  continue;
+                }
+
+                // Alt Komut 3: Genel ".admin" -> Hem NeYapsak Süper Admin Hem QRes Süper Admin Canlı Özeti!
+                const [nyRes, qresStatsRes, qresRestRes] = await Promise.all([
+                  fetch(`${NEYAPSAK_API}/dashboard-data`, { headers: { 'x-admin-key': NEYAPSAK_KEY } }),
+                  fetch(`${QRES_API}/stats`, { headers: { 'x-admin-secret': QRES_KEY } }),
+                  fetch(`${QRES_API}/restaurants`, { headers: { 'x-admin-secret': QRES_KEY } }),
+                ]);
+
+                const ny = await nyRes.json().catch(() => ({}));
+                const qStats = (await qresStatsRes.json().catch(() => ({}))).data || {};
+                const qRests = (await qresRestRes.json().catch(() => ({}))).data || [];
+
+                const recentUsers = (ny.activeUsers || [])
+                  .slice(0, 5)
+                  .map((u) => `  • @${u.username} (${u.displayName || 'Kullanıcı'})`)
+                  .join('\n');
+
+                const topQresList = qRests
+                  .sort((a, b) => (b.totalQrScans || 0) - (a.totalQrScans || 0))
+                  .slice(0, 5)
+                  .map(
+                    (r, i) =>
+                      `  ${i + 1}. *${r.name}:* 📲 ${r.totalQrScans || 0} QR | 💰 ${(r.totalRevenue || 0).toLocaleString('tr-TR')} ₺`
+                  )
+                  .join('\n');
+
+                const masterReport =
+                  `🦾 *STARK INDUSTRIES — NEYAPSAK & QRES SÜPER ADMİN MERKEZİ* ⚡\n\n` +
+                  `📱 *1. NEYAPSAK CANLI SÜPER ADMİN VERİLERİ:*\n` +
+                  `• 👥 *Toplam Kayıtlı Kullanıcı:* *${ny.users || 0}*\n` +
+                  `• 🟢 *Anlık Online Kullanıcı:* *${ny.currentlyActive || 0}*\n` +
+                  `• 📅 *Bu Hafta Aktif Kullanıcı:* *${ny.weeklyActive || 0}*\n` +
+                  `• 📸 *Toplam Gönderi (Post):* *${ny.posts || 0}* | 🎬 *Reels:* *${ny.totalReels || 0}*\n` +
+                  `• 📍 *Kayıtlı Mekan:* *${ny.places || 0}*\n` +
+                  `• 💬 *Sohbetler:* *${ny.totalChats || 0}* | *Mesajlar:* *${ny.totalMessages || 0}*\n` +
+                  `• 🚨 *Bekleyen Şikayet:* *${ny.unreadReports || 0}* | *Geri Bildirim:* *${ny.unreadFeedbacks || 0}*\n\n` +
+                  `👤 *Son Aktif Kullanıcılar:*\n${recentUsers || '  • Veri yok'}\n\n` +
+                  `━━━━━━━━━━━━━━━━━━━━\n\n` +
+                  `🍽️ *2. QRES SÜPER ADMİN GENEL ÖZETİ:*\n` +
+                  `• 🏪 *Toplam Restoran:* *${qStats.totalRestaurants || qRests.length}*\n` +
+                  `• 📲 *Toplam QR Okutma:* *${(qStats.totalQrScans || 0).toLocaleString('tr-TR')} Kişi*\n` +
+                  `• 💰 *Toplam Platform Cirosu:* *${(qStats.totalRevenue || 0).toLocaleString('tr-TR')} ₺*\n` +
+                  `• 🧾 *Toplam Sipariş:* *${qStats.totalOrders || 0}* (Bugün: *${qStats.todayOrders || 0}*)\n\n` +
+                  `🏆 *En Çok QR Okutulan Mekanlar:*\n${topQresList}\n\n` +
+                  `💡 *Özel Komutlar:*\n` +
+                  `• *.admin qres tantavi* → Tantavi'nin tüm QR ve ciro detayları\n` +
+                  `• *.admin qres muamma* → Muamma Kahve detayları\n` +
+                  `• *.admin bildirim Başlık | Mesaj* → Tüm NeYapsak kullanıcılarına Push Bildirim atar!`;
+
+                await notifyOwnerSelfChat(masterReport);
+                await sendVoiceNote(
+                  '905525222988@s.whatsapp.net',
+                  `Hoş geldiniz Eren Bey. Süper Admin komuta merkezine bağlandım. NeYapsak uygulamasında şu an ${ny.users || 0} kayıtlı kullanıcı ve ${ny.weeklyActive || 0} haftalık aktif kullanıcı bulunuyor. QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR menü okutması ve ${qStats.totalRevenue || 0} Türk Lirası ciro kaydedildi.`
+                );
+              } catch (adminErr) {
+                console.error('Süper Admin hatası:', adminErr.message);
+                await notifyOwnerSelfChat(`❌ *Süper Admin Bağlantı Hatası:* ${adminErr.message}`);
+              }
+              continue;
+            }
             // 0-A. ".uyku modu" veya ".uyku" -> Hem Avelon Sekreterini Uyku Moduna Al Hem Mac Bilgisayarı Uyut!
             if (myText === '.uyku' || myText.startsWith('.uyku ') || myText === 'uyku modu') {
               stateData.currentMode = 'uyku';
