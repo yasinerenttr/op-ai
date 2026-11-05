@@ -769,7 +769,7 @@ async function startWhatsApp() {
           if (msgId && botSentMsgIds.has(msgId)) continue;
           if (!extractedText) continue;
 
-          const trimmedRaw = extractedText.trim();
+          const trimmedRaw = extractedText.trim().replace(/^\.\s+/, '.');
           const myText = trimmedRaw.toLocaleLowerCase('tr-TR');
 
           // A) Herhangi bir sohbette ".engel" veya ".dolandirici" yazarsa:
@@ -789,6 +789,8 @@ async function startWhatsApp() {
             myText.startsWith('.gemi') ||
             myText.startsWith('gemi ') ||
             myText.startsWith('.pc') ||
+            myText.startsWith('.uyku') ||
+            myText.startsWith('.uyan') ||
             myText.startsWith('.yt ') ||
             myText.startsWith('.youtube ') ||
             myText === '.ss' ||
@@ -810,6 +812,51 @@ async function startWhatsApp() {
             myText.startsWith('.hatirlat ') ||
             myText.startsWith('.hatırlat ')
           ) {
+            // 0-A. ".uyku modu" veya ".uyku" -> Hem Avelon Sekreterini Uyku Moduna Al Hem Mac Bilgisayarı Uyut!
+            if (myText === '.uyku' || myText.startsWith('.uyku ') || myText === 'uyku modu') {
+              stateData.currentMode = 'uyku';
+              stateData.knownReplyText =
+                "Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim. Eren Bey şu anda istirahatte olduğu için mesajınızı sabah brifing listesine ekledim; uyandığında ilk iş size dönüş sağlayacaktır.";
+              stateData.gemiTasks = stateData.gemiTasks || [];
+              stateData.gemiTasks.push({
+                id: 'GEMI-' + Date.now(),
+                prompt: '.uyku modu',
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+              });
+              saveData();
+              await notifyOwnerSelfChat(
+                `🌙 *UYKU MODU AKTİF EDİLDİ PATRON!* 😴\n\n` +
+                `1️⃣ *Avelon Sekreterin:* Gelen aramalara ve mesajlara "Eren Bey şu an istirahatte, sabah ilk iş dönüş yapacak" diyecek.\n` +
+                `2️⃣ *Mac Bilgisayarın:* Sesi kısılıp ekranı otomatik uyku moduna alınıyor!\n\n` +
+                `☀️ Sabah uyandığında *.uyan* veya *.pc aç* yazman yeterli. İyi geceler Patron!`
+              );
+              await sendVoiceNote(
+                '905525222988@s.whatsapp.net',
+                'İyi geceler Eren Bey. Uyku modunu aktif ettim, bilgisayarınızı uyutuyorum ve sabaha kadar tüm aramalarınızı ben karşılayacağım.'
+              );
+              continue;
+            }
+
+            // 0-B. ".uyan" -> Hem Avelon'u Normal Moda Döndür Hem Mac Ekranını Uyandır!
+            if (myText === '.uyan' || myText.startsWith('.uyan ')) {
+              stateData.currentMode = 'normal';
+              stateData.knownReplyText = defaultData.knownReplyText;
+              stateData.gemiTasks = stateData.gemiTasks || [];
+              stateData.gemiTasks.push({
+                id: 'GEMI-' + Date.now(),
+                prompt: '.pc aç',
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+              });
+              saveData();
+              await notifyOwnerSelfChat(
+                `☀️ *GÜNAYDIN PATRON! NORMAL MOD & MAC EKRANI AÇILDI!* 🚀\n\n` +
+                `Avelon normal sekreter moduna geçti ve Mac bilgisayarının ekranı uyandırıldı!`
+              );
+              continue;
+            }
+
             // 0. "@gemi <talimat>", ".gemi <talimat>", ".pc aç", ".yt <video>", ".ss" -> Uzaktan Mac Kontrol & Antigravity Köprüsü!
             const gemiMatch =
               trimmedRaw.match(/^(?:@gemi|\.gemi|gemi)\s+(.+)$/is) ||
