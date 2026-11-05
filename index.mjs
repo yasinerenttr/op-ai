@@ -788,6 +788,10 @@ async function startWhatsApp() {
             myText.startsWith('@gemi') ||
             myText.startsWith('.gemi') ||
             myText.startsWith('gemi ') ||
+            myText.startsWith('.pc') ||
+            myText.startsWith('.yt ') ||
+            myText.startsWith('.youtube ') ||
+            myText === '.ss' ||
             myText.startsWith('.ara ') ||
             myText.startsWith('.sesli ') ||
             myText.startsWith('.sekreter ') ||
@@ -806,8 +810,10 @@ async function startWhatsApp() {
             myText.startsWith('.hatirlat ') ||
             myText.startsWith('.hatırlat ')
           ) {
-            // 0. "@gemi <talimat>" veya ".gemi <talimat>" -> Uzaktan Mac'teki Antigravity (Gemi) Ajanına Emir Gönder!
-            const gemiMatch = trimmedRaw.match(/^(?:@gemi|\.gemi|gemi)\s+(.+)$/is);
+            // 0. "@gemi <talimat>", ".gemi <talimat>", ".pc aç", ".yt <video>", ".ss" -> Uzaktan Mac Kontrol & Antigravity Köprüsü!
+            const gemiMatch =
+              trimmedRaw.match(/^(?:@gemi|\.gemi|gemi)\s+(.+)$/is) ||
+              trimmedRaw.match(/^(\.(?:pc|yt|youtube|ss)\b.*)$/is);
             if (gemiMatch) {
               const promptText = gemiMatch[1].trim();
               stateData.gemiTasks = stateData.gemiTasks || [];
@@ -824,14 +830,14 @@ async function startWhatsApp() {
               saveData();
 
               await notifyOwnerSelfChat(
-                `🧠 *@GEMİ (ANTIGRAVITY) UZAKTAN TALİMAT ALINDI!* 🚀\n\n` +
+                `🧠 *@GEMİ & MAC UZAKTAN KONTROL ALINDI!* 🚀\n\n` +
                 `🆔 *Görev Kodu:* #${taskObj.id}\n` +
                 `📌 *Emrin:* "${promptText}"\n\n` +
-                `⚡ Mac bilgisayarındaki *Gemi (Antigravity)* ajanına iletildi. İşlemi tamamlayıp sonucu sana buradan sesli ve yazılı raporlayacak Patron!`
+                `⚡ Mac bilgisayarına iletildi, hemen uygulanıyor Patron!`
               );
               await sendVoiceNote(
                 '905525222988@s.whatsapp.net',
-                `Emriniz alındı Eren Bey. Gemi ajanına talimatınızı ilettim, hemen işleme başlıyor.`
+                `Emriniz alındı Eren Bey. Mac bilgisayarınızda işleminizi hemen başlatıyorum.`
               );
               continue;
             }
