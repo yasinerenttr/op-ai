@@ -759,7 +759,7 @@ async function startWhatsApp() {
 
         const canonicalKey = getCanonicalKey(rawNum);
         if (!canonicalKey) continue;
-        const extractedText = extractMessageText(msg.message);
+        let extractedText = extractMessageText(msg.message);
         const isSelfChat =
           (connectedUser?.id && (canonicalKey === connectedUser.id || rawNum === connectedUser.id)) ||
           canonicalKey === '905525222988' ||
@@ -769,38 +769,103 @@ async function startWhatsApp() {
         if (msg.key?.fromMe || isSelfChat) {
           if (msgId && botSentMsgIds.has(msgId)) continue;
 
-          // 🎤 YENİ: Patron "Siz" sohbetine SES KAYDI (Voice Note) attığında sesini dinle, yazıya çevir ve her dediğini yap!
+          // 🎤 YENİ: Patron "Siz" sohbetine SES KAYDI (Voice Note) attığında bulutta (PC kapalı olsa bile!) yazıya çevir ve uygula!
           const innerMsg =
             msg.message?.ephemeralMessage?.message ||
             msg.message?.viewOnceMessage?.message ||
             msg.message;
           if (isSelfChat && innerMsg?.audioMessage) {
             try {
-              console.log('🎙️ Patron Eren "Siz" sohbetinden Sesli Talimat gönderdi, indiriliyor...');
+              console.log('🎙️ Patron Eren "Siz" sohbetinden Sesli Talimat gönderdi, bulutta çözümleniyor...');
               const audioBuf = await downloadMediaMessage(msg, 'buffer', {});
               if (audioBuf && audioBuf.length > 0) {
-                stateData.gemiTasks = stateData.gemiTasks || [];
-                const taskObj = {
-                  id: 'GEMI-VOICE-' + Date.now(),
-                  prompt: '__VOICE_NOTE__',
-                  audioBase64: audioBuf.toString('base64'),
-                  status: 'pending',
-                  createdAt: new Date().toISOString(),
-                };
-                stateData.gemiTasks.push(taskObj);
-                if (stateData.gemiTasks.length > 30) {
-                  stateData.gemiTasks = stateData.gemiTasks.slice(-30);
+                let cloudSpoken = '';
+                const tmpOgg = `/tmp/avelon_in_${Date.now()}.ogg`;
+                const tmpFlac = `/tmp/avelon_in_${Date.now()}.flac`;
+                try {
+                  fs.writeFileSync(tmpOgg, audioBuf);
+                  const ffBin = ffmpegStatic && fs.existsSync(ffmpegStatic) ? ffmpegStatic : 'ffmpeg';
+                  execSync(`"${ffBin}" -y -i "${tmpOgg}" -ar 16000 -ac 1 -sample_fmt s16 "${tmpFlac}" 2>/dev/null`);
+                  const flacBuf = fs.readFileSync(tmpFlac);
+                  const gRes = await fetch(
+                    'http://www.google.com/speech-api/v2/recognize?client=chromium&lang=tr-TR&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0',
+                    {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'audio/x-flac; rate=16000' },
+                      body: flacBuf,
+                    }
+                  );
+                  const gTxt = await gRes.text();
+                  for (const line of gTxt.split('\n')) {
+                    if (!line.trim()) continue;
+                    try {
+                      const j = JSON.parse(line);
+                      const alt = j?.result?.[0]?.alternative?.[0]?.transcript;
+                      if (alt) {
+                        cloudSpoken = alt.trim();
+                        break;
+                      }
+                    } catch (_) {}
+                  }
+                } catch (_) {
+                } finally {
+                  try { if (fs.existsSync(tmpOgg)) fs.unlinkSync(tmpOgg); } catch (_) {}
+                  try { if (fs.existsSync(tmpFlac)) fs.unlinkSync(tmpFlac); } catch (_) {}
                 }
-                saveData();
-                await notifyOwnerSelfChat(
-                  `🎙️ *SESLİ EMİR ALINDI PATRON!* 🧠\n\n` +
-                  `⏳ Ses kaydın çözümleniyor ve Mac bilgisayarına / Gemi ajanına uygulanıyor...`
-                );
+
+                if (cloudSpoken) {
+                  const sLow = cloudSpoken.toLocaleLowerCase('tr-TR');
+                  await notifyOwnerSelfChat(`🗣️ *Sesli Emrin Anlaşıldı:* _"${cloudSpoken}"_`);
+
+                  // Eğer sesli emir Süper Admin / Tantavi / QRes / Takvim / Uyku ise PC kapalı olsa bile direkt Bulutta çalıştır!
+                  const isTantaviVoice =
+                    sLow.includes('tantav') ||
+                    sLow.includes('tanatav') ||
+                    sLow.includes('tan tamam') ||
+                    sLow.includes('tan tabii') ||
+                    /\btan\b/.test(sLow);
+                  if (isTantaviVoice) {
+                    extractedText = '.admin qres tantavi';
+                  } else if (sLow.includes('muamma')) {
+                    extractedText = '.admin qres muamma';
+                  } else if (sLow.includes('2art') || sLow.includes('iki art')) {
+                    extractedText = '.admin qres 2arti2';
+                  } else if (sLow.includes('admin') || sLow.includes('qres') || sLow.includes('qris')) {
+                    extractedText = '.admin';
+                  } else if (sLow.includes('takvim') || sLow.includes('randevu') || sLow.includes('özet')) {
+                    extractedText = '.takvim';
+                  } else if (sLow.includes('uyku')) {
+                    extractedText = '.uyku modu';
+                  } else {
+                    // Mac veya @gemi komutuysa Mac kuyruğuna ekle
+                    stateData.gemiTasks = stateData.gemiTasks || [];
+                    stateData.gemiTasks.push({
+                      id: 'GEMI-VOICE-' + Date.now(),
+                      prompt: cloudSpoken,
+                      status: 'pending',
+                      createdAt: new Date().toISOString(),
+                    });
+                    saveData();
+                    continue;
+                  }
+                } else {
+                  // Yedek olarak Mac kuyruğuna gönder
+                  stateData.gemiTasks = stateData.gemiTasks || [];
+                  stateData.gemiTasks.push({
+                    id: 'GEMI-VOICE-' + Date.now(),
+                    prompt: '__VOICE_NOTE__',
+                    audioBase64: audioBuf.toString('base64'),
+                    status: 'pending',
+                    createdAt: new Date().toISOString(),
+                  });
+                  saveData();
+                  continue;
+                }
               }
             } catch (vErr) {
               console.error('Sesli talimat indirme hatası:', vErr.message);
+              continue;
             }
-            continue;
           }
 
           if (!extractedText) continue;
