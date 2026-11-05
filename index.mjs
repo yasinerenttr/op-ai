@@ -11,9 +11,18 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec, execSync } from 'child_process';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import ffmpegStatic from 'ffmpeg-static';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Render Linux ortamında ffmpeg-static binary'sinin kurulu olduğundan emin ol
+try {
+  if (ffmpegStatic && !fs.existsSync(ffmpegStatic)) {
+    execSync('node node_modules/ffmpeg-static/install.js', { cwd: __dirname });
+  }
+} catch (_) {}
 
 const DATA_FILE = path.join(__dirname, 'bot_data.json');
 const AUTH_DIR = path.join(__dirname, 'auth_info');
@@ -247,67 +256,139 @@ async function notifyOwnerSelfChat(reportText) {
   }
 }
 
-// Türkçe Yapay Zeka Sekreter Sesli Mesajı (🎤 Mavi Mikrofon / PTT) Üretip Gönderen Fonksiyon
-async function sendVoiceNote(targetJid, spokenText) {
+// Avelon Ses Profilleri (Microsoft Azure Neural HD Stüdyo Sesleri)
+const VOICE_PROFILES = {
+  emel: {
+    id: 'tr-TR-EmelNeural',
+    label: 'Emel HD (Kadın Yönetici Sekreter — Doğal & Kibar)',
+    rate: '+5%',
+    pitch: '+0Hz',
+  },
+  ahmet: {
+    id: 'tr-TR-AhmetNeural',
+    label: 'Ahmet HD (Erkek Yönetici Asistan — Karizmatik & Kurumsal)',
+    rate: '+4%',
+    pitch: '-1Hz',
+  },
+  ava: {
+    id: 'en-US-AvaMultilingualNeural',
+    label: 'Ava Dragon HD (Uluslararası Multilingual Kadın Asistan)',
+    rate: '+3%',
+    pitch: '+0Hz',
+  },
+};
+
+stateData.voiceProfile = stateData.voiceProfile || 'emel';
+
+// Türkçe Yapay Zeka Sekreter Sesli Mesajı (🎤 Mavi Mikrofon / PTT - Neural HD Stüdyo Sesi)
+async function sendVoiceNote(targetJid, spokenText, overrideVoiceKey = null) {
   if (!sock || !spokenText) return null;
   try {
     await sock.sendPresenceUpdate('recording', targetJid);
-    // Metni doğal cümle parçalarına böl (Google TTS 180 karakter sınırı için)
+
+    // Metni doğal insan konuşmasına uygun hale getir (emoji, markdown, link temizliği + doğal vurgu)
     const cleanSpeech = spokenText
       .replace(/[*_~`#]/g, '')
       .replace(/https?:\/\/\S+/g, '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .replace(/\bBTM\b/g, 'B T M')
+      .replace(/\bİTO\b/g, 'İ T O')
+      .replace(/#AVL-/gi, 'Avelon ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    const words = cleanSpeech.split(' ');
-    const chunks = [];
-    let current = '';
-    for (const w of words) {
-      if ((current + ' ' + w).trim().length > 165) {
-        if (current.trim()) chunks.push(current.trim());
-        current = w;
-      } else {
-        current = (current + ' ' + w).trim();
-      }
-    }
-    if (current.trim()) chunks.push(current.trim());
+    const selectedKey = overrideVoiceKey || stateData.voiceProfile || 'emel';
+    const profile = VOICE_PROFILES[selectedKey] || VOICE_PROFILES.emel;
 
-    const mp3Buffers = [];
-    for (const chunk of chunks) {
-      const ttsUrl =
-        'https://translate.google.com/translate_tts?ie=UTF-8&tl=tr&client=tw-ob&q=' +
-        encodeURIComponent(chunk);
-      const res = await fetch(ttsUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+    let fullMp3 = null;
+
+    // 1. Birincil Motor: Microsoft Azure Neural HD (EmelNeural / AhmetNeural - Gerçek İnsan Tonlaması)
+    try {
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(profile.id, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+      const { audioStream } = tts.toStream(cleanSpeech, {
+        rate: profile.rate,
+        pitch: profile.pitch,
       });
-      if (res.ok) {
-        mp3Buffers.push(Buffer.from(await res.arrayBuffer()));
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Neural TTS timeout')), 12000);
+        audioStream.on('data', (c) => chunks.push(c));
+        audioStream.on('end', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+        audioStream.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+      try {
+        tts.close();
+      } catch (_) {}
+      if (chunks.length > 0) {
+        fullMp3 = Buffer.concat(chunks);
+      }
+    } catch (neuralErr) {
+      console.error('Neural HD TTS yedek motora geçiyor:', neuralErr.message);
+    }
+
+    // 2. Yedek Motor (Sadece Neural HD bağlantısı koparsa)
+    if (!fullMp3 || fullMp3.length < 500) {
+      const words = cleanSpeech.split(' ');
+      const chunks = [];
+      let current = '';
+      for (const w of words) {
+        if ((current + ' ' + w).trim().length > 165) {
+          if (current.trim()) chunks.push(current.trim());
+          current = w;
+        } else {
+          current = (current + ' ' + w).trim();
+        }
+      }
+      if (current.trim()) chunks.push(current.trim());
+
+      const mp3Buffers = [];
+      for (const chunk of chunks) {
+        const ttsUrl =
+          'https://translate.google.com/translate_tts?ie=UTF-8&tl=tr&client=tw-ob&q=' +
+          encodeURIComponent(chunk);
+        const res = await fetch(ttsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+        });
+        if (res.ok) {
+          mp3Buffers.push(Buffer.from(await res.arrayBuffer()));
+        }
+      }
+      if (mp3Buffers.length > 0) {
+        fullMp3 = Buffer.concat(mp3Buffers);
       }
     }
 
-    if (mp3Buffers.length === 0) {
+    if (!fullMp3 || fullMp3.length === 0) {
       await sock.sendPresenceUpdate('paused', targetJid);
       return null;
     }
 
-    const fullMp3 = Buffer.concat(mp3Buffers);
     let finalAudio = fullMp3;
     let finalMime = 'audio/mp4';
 
-    // Sistemde ffmpeg varsa gerçek OGG Opus WhatsApp Sesli Notuna çevir
-    const tmpIn = path.join('/tmp', `avl_tts_${Date.now()}.mp3`);
-    const tmpOut = path.join('/tmp', `avl_tts_${Date.now()}.ogg`);
+    // ffmpeg-static veya sistem ffmpeg ile 48kHz Kristal Netliğinde WhatsApp Opus Sesli Notuna (🎤) çevir
+    const ffmpegBin = ffmpegStatic && fs.existsSync(ffmpegStatic) ? ffmpegStatic : 'ffmpeg';
+    const randId = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const tmpIn = path.join('/tmp', `avl_tts_${randId}.mp3`);
+    const tmpOut = path.join('/tmp', `avl_tts_${randId}.ogg`);
     try {
       fs.writeFileSync(tmpIn, fullMp3);
       execSync(
-        `ffmpeg -y -i "${tmpIn}" -c:a libopus -b:a 32k -vbr on -compression_level 10 -application voip "${tmpOut}" 2>/dev/null`
+        `"${ffmpegBin}" -y -i "${tmpIn}" -c:a libopus -b:a 48k -vbr on -ar 48000 -ac 1 -compression_level 10 -application voip "${tmpOut}" 2>/dev/null`
       );
       if (fs.existsSync(tmpOut)) {
         finalAudio = fs.readFileSync(tmpOut);
         finalMime = 'audio/ogg; codecs=opus';
       }
     } catch (_) {
-      // ffmpeg yoksa MP3/MP4 olarak gönder
+      // ffmpeg çalışmazsa yüksek kaliteli MP4 olarak gönder
     } finally {
       try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (_) {}
       try { if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut); } catch (_) {}
@@ -320,7 +401,7 @@ async function sendVoiceNote(targetJid, spokenText) {
     });
     if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
     await sock.sendPresenceUpdate('paused', targetJid);
-    console.log(`🎙️ Sesli Sekreter Mesajı Gönderildi -> ${targetJid}`);
+    console.log(`🎙️ Neural HD Sesli Sekreter (${profile.id}) Gönderildi -> ${targetJid}`);
     return sent;
   } catch (err) {
     console.error('Sesli mesaj gönderme hatası:', err.message);
@@ -717,6 +798,8 @@ async function startWhatsApp() {
             myText.startsWith('.ertele ') ||
             myText.startsWith('.iptal ') ||
             myText.startsWith('.mod ') ||
+            myText === '.ses' ||
+            myText.startsWith('.ses ') ||
             myText.startsWith('.hatirlat ') ||
             myText.startsWith('.hatırlat ')
           ) {
@@ -877,6 +960,36 @@ async function startWhatsApp() {
                 await sendVoiceNote('905525222988@s.whatsapp.net', `Patron Eren, hatırlatma vaktin geldi: ${note}`);
                 await notifyOwnerSelfChat(`🔔 *HATIRLATMA VAKTİ PATRON!* ⏰\n\n📌 *Notun:* "${note}"`);
               }, mins * 60 * 1000);
+              continue;
+            }
+
+            // 5.5 ".ses kiz" | ".ses erkek" | ".ses test" -> Neural HD Stüdyo Sesini Değiştir & Canlı Dinle
+            if (myText === '.ses' || myText.startsWith('.ses ')) {
+              const arg = myText.replace('.ses', '').trim();
+              if (arg === 'erkek' || arg === 'ahmet') {
+                stateData.voiceProfile = 'ahmet';
+                saveData();
+              } else if (arg === 'kiz' || arg === 'kız' || arg === 'kadin' || arg === 'kadın' || arg === 'emel') {
+                stateData.voiceProfile = 'emel';
+                saveData();
+              } else if (arg === 'ava') {
+                stateData.voiceProfile = 'ava';
+                saveData();
+              }
+              const activeProf = VOICE_PROFILES[stateData.voiceProfile || 'emel'] || VOICE_PROFILES.emel;
+              await notifyOwnerSelfChat(
+                `🎙️ *AVELON NEURAL HD STÜDYO SESİ AKTİF*\n\n` +
+                `🗣️ *Seçili Ses:* *${activeProf.label}*\n` +
+                `💡 Değiştirmek için:\n` +
+                `• *.ses kiz* -> Emel HD (Kadın Yönetici Sekreter)\n` +
+                `• *.ses erkek* -> Ahmet HD (Erkek Yönetici Asistan)\n` +
+                `• *.ses test* -> Örnek sesli not gönderir\n\n` +
+                `⏳ Şimdi yeni sesimle canlı örnek kaydı gönderiyorum Patron...`
+              );
+              await sendVoiceNote(
+                '905525222988@s.whatsapp.net',
+                'Merhabalar Eren Bey, ben özel yönetici sekreteriniz Avelon. Yeni stüdyo kalitesindeki doğal sesimle aramalarınızı karşılamaya ve randevularınızı yönetmeye hazırım.'
+              );
               continue;
             }
 
@@ -1328,7 +1441,31 @@ app.get('/api/status', (req, res) => {
     strangers: stateData.strangerStages,
     appointments: stateData.appointments || {},
     pendingOutreach: stateData.pendingOutreach || {},
+    voiceProfile: stateData.voiceProfile || 'emel',
   });
+});
+
+// Yeni Neural HD Stüdyo Sesini Test Etme ve Değiştirme Endpoint'i
+app.post('/api/test-voice', async (req, res) => {
+  try {
+    const { voice, text, target } = req.body || {};
+    if (voice && VOICE_PROFILES[voice]) {
+      stateData.voiceProfile = voice;
+      saveData();
+    }
+    const targetJid = target || '905525222988@s.whatsapp.net';
+    const sampleText =
+      text ||
+      'Merhabalar Eren Bey, ben özel yönetici sekreteriniz Avelon. Yeni stüdyo kalitesindeki doğal sesimle aramalarınızı karşılamaya ve randevularınızı yönetmeye hazırım.';
+    const sent = await sendVoiceNote(targetJid, sampleText, voice || stateData.voiceProfile);
+    res.json({
+      ok: Boolean(sent),
+      voiceProfile: stateData.voiceProfile,
+      id: sent?.key?.id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Patron Eren'in Herhangi Bir Numaraya Sesli Sekreter Göndermesi ("Yarın için müsait misiniz?")
