@@ -977,7 +977,8 @@ async function startWhatsApp() {
                       : '5.0';
 
                   const reportMsg =
-                    `🦾 *JARVIS QRES SÜPER ADMİN — MEKAN İSTİHBARAT RAPORU* 📊\n\n` +
+                    `🤖 *AVELON QRES SÜPER ADMİN — MEKAN İSTİHBARAT RAPORU* 📊\n` +
+                    `🏭 *TATAR ENDÜSTRİ KOMUTA MERKEZİ*\n\n` +
                     `🏛️ *Mekan:* *${restObj.name}*\n` +
                     `🟢 *Durum:* ${restObj.isActive ? 'Aktif' : 'Pasif'} | ${restObj.isOpen ? 'Şu An Açık' : 'Kapalı'}\n` +
                     `📍 *Adres:* ${restObj.address || 'Belirtilmedi'}\n\n` +
@@ -1027,7 +1028,7 @@ async function startWhatsApp() {
                   .join('\n');
 
                 const masterReport =
-                  `🦾 *STARK INDUSTRIES — NEYAPSAK & QRES SÜPER ADMİN MERKEZİ* ⚡\n\n` +
+                  `🏭 *TATAR ENDÜSTRİ — AVELON SÜPER ADMİN MERKEZİ* ⚡\n\n` +
                   `📱 *1. NEYAPSAK CANLI SÜPER ADMİN VERİLERİ:*\n` +
                   `• 👥 *Toplam Kayıtlı Kullanıcı:* *${ny.users || 0}*\n` +
                   `• 🟢 *Anlık Online Kullanıcı:* *${ny.currentlyActive || 0}*\n` +
@@ -1052,7 +1053,7 @@ async function startWhatsApp() {
                 await notifyOwnerSelfChat(masterReport);
                 await sendVoiceNote(
                   '905525222988@s.whatsapp.net',
-                  `Hoş geldiniz Eren Bey. Süper Admin komuta merkezine bağlandım. NeYapsak uygulamasında şu an ${ny.users || 0} kayıtlı kullanıcı ve ${ny.weeklyActive || 0} haftalık aktif kullanıcı bulunuyor. QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR menü okutması ve ${qStats.totalRevenue || 0} Türk Lirası ciro kaydedildi.`
+                  `Hoş geldiniz Eren Bey. Tatar Endüstri Avelon Süper Admin komuta merkezine bağlandım. NeYapsak uygulamasında şu an ${ny.users || 0} kayıtlı kullanıcı ve ${ny.weeklyActive || 0} haftalık aktif kullanıcı bulunuyor. QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR menü okutması ve ${qStats.totalRevenue || 0} Türk Lirası ciro kaydedildi.`
                 );
               } catch (adminErr) {
                 console.error('Süper Admin hatası:', adminErr.message);

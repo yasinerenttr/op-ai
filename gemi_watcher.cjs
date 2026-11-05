@@ -157,29 +157,46 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
-  // 3.5) JARVIS SÜPER ADMİN KOMUTU (Sesli veya yazılı "admin", "tantavi", "qres")
-  if (low.includes('admin') || low.includes('tantavi') || low.includes('tanatavi') || low.includes('muamma') || low.includes('qres')) {
+  // 3.5) AVELON — TATAR ENDÜSTRİ SÜPER ADMİN KOMUTU (Sesli veya yazılı "admin", "tantavi", "qres")
+  if (
+    low.includes('admin') ||
+    low.includes('tantavi') ||
+    low.includes('tanatavi') ||
+    low.includes('tan tamam') ||
+    low.includes('tan tabii') ||
+    low.includes('muamma') ||
+    low.includes('qres') ||
+    low.includes('qris')
+  ) {
     const NEYAPSAK_API = 'https://jellyfish-app-oydmg.ondigitalocean.app/api/admin';
     const NEYAPSAK_KEY = 'neyapsak_admin_secret_key_2026_secure';
     const QRES_API = 'https://web-production-b7541.up.railway.app/api/super';
     const QRES_KEY = 'neyapsak_super_admin_secret';
 
     try {
-      const venueWords = low
-        .replace(/^(?:\.admin|admin|qres|\.qres)\s*/g, '')
-        .replace(/\b(?:verilerini|verileri|getir|kaç|kac|kişi|kisi|okutmuş|okutmus|nedir|göster)\b/g, '')
-        .trim();
+      const isTantaviSpeech =
+        low.includes('tantav') ||
+        low.includes('tanatav') ||
+        low.includes('tan tamam') ||
+        low.includes('tan tabii') ||
+        /\btan\b/.test(low);
+      const isMuammaSpeech = low.includes('muamma');
+      const is2Arti2Speech = low.includes('2art') || low.includes('iki art');
 
-      if (venueWords && (low.includes('tantav') || low.includes('tanatav') || low.includes('muamma') || low.includes('2art') || venueWords.length >= 3)) {
+      if (isTantaviSpeech || isMuammaSpeech || is2Arti2Speech) {
         const restRes = await fetch(`${QRES_API}/restaurants`, { headers: { 'x-admin-secret': QRES_KEY } });
         const restJson = await restRes.json();
         const restaurants = restJson.data || [];
-        const norm = (s) => String(s || '').toLocaleLowerCase('tr-TR').replace(/[ığüşöç]/g, (c) => ({ ı: 'i', ğ: 'g', ü: 'u', ş: 's', ö: 'o', ç: 'c' }[c] || c)).replace(/[^a-z0-9]/g, '');
-        const qNorm = norm(venueWords || low);
+        const norm = (s) =>
+          String(s || '')
+            .toLocaleLowerCase('tr-TR')
+            .replace(/[ığüşöç]/g, (c) => ({ ı: 'i', ğ: 'g', ü: 'u', ş: 's', ö: 'o', ç: 'c' }[c] || c))
+            .replace(/[^a-z0-9]/g, '');
         const matched = restaurants.find((r) => {
           const nNorm = norm(r.name);
-          if (nNorm.includes(qNorm) || qNorm.includes(nNorm)) return true;
-          if ((qNorm.includes('tantav') || qNorm.includes('tanatav')) && nNorm.includes('tantav')) return true;
+          if (isTantaviSpeech && nNorm.includes('tantav')) return true;
+          if (isMuammaSpeech && nNorm.includes('muamma')) return true;
+          if (is2Arti2Speech && nNorm.includes('2arti2')) return true;
           return false;
         });
         if (matched) {
@@ -195,12 +212,13 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
           const recentDaysText = dailyEntries.slice(0, 7).map(([d, c]) => `  • 📅 *${d}:* ${c} kişi QR okuttu`).join('\n');
           await completeTask(
             task.id,
-            `🦾 *JARVIS QRES SÜPER ADMİN — ${restObj.name.toUpperCase()}* 📊\n\n` +
+            `🤖 *AVELON QRES SÜPER ADMİN — ${restObj.name.toUpperCase()}* 📊\n` +
+              `🏭 *TATAR ENDÜSTRİ KOMUTA MERKEZİ*\n\n` +
               `📲 *TOPLAM QR OKUTAN:* *${totalScans.toLocaleString('tr-TR')} Kişi*\n` +
               `📅 *Son Günde Okutan:* *${lastDayCount} Kişi*\n` +
               `💰 *Toplam Ciro:* *${totalRev.toLocaleString('tr-TR')} ₺* (${totalOrd} Sipariş)\n\n` +
               `📈 *SON 7 GÜN QR DÖKÜMÜ:*\n${recentDaysText}`,
-            `Eren Bey, ${restObj.name} verilerini getirdim. Şu ana kadar toplam ${totalScans} kişi QR menüyü okutmuş ve toplam ${totalRev} Türk Lirası ciro yapılmış.`
+            `Eren Bey, Tatar Endüstri Avelon sisteminden ${restObj.name} verilerini getirdim. Şu ana kadar toplam ${totalScans} kişi QR menüyü okutmuş ve toplam ${totalRev} Türk Lirası ciro yapılmış.`
           );
           return true;
         }
@@ -214,10 +232,10 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
       const qStats = (await qresStatsRes.json().catch(() => ({}))).data || {};
       await completeTask(
         task.id,
-        `🦾 *STARK INDUSTRIES — NEYAPSAK & QRES SÜPER ADMİN* ⚡\n\n` +
+        `🏭 *TATAR ENDÜSTRİ — AVELON SÜPER ADMİN MERKEZİ* ⚡\n\n` +
           `📱 *NeYapsak:* ${ny.users || 0} Kullanıcı | ${ny.weeklyActive || 0} Haftalık Aktif | ${ny.posts || 0} Gönderi\n` +
           `🍽️ *QRes:* ${qStats.totalRestaurants || 0} Restoran | ${(qStats.totalQrScans || 0).toLocaleString('tr-TR')} QR Okutma | ${(qStats.totalRevenue || 0).toLocaleString('tr-TR')} ₺ Ciro`,
-        `Hoş geldiniz Eren Bey. NeYapsak uygulamasında ${ny.users || 0} kullanıcı, QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR okutma ve ${qStats.totalRevenue || 0} Türk Lirası ciro bulunuyor.`
+        `Hoş geldiniz Eren Bey. Tatar Endüstri Avelon Süper Admin sisteminde NeYapsak uygulamasında ${ny.users || 0} kullanıcı, QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR okutma ve ${qStats.totalRevenue || 0} Türk Lirası ciro bulunuyor.`
       );
       return true;
     } catch (_) {}
@@ -258,10 +276,14 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
 
 let iosBuildNotified = true;
 let tickCount = 0;
+let isPolling = false;
+const processedIds = new Set();
 const IOS_BUILD_ID = 'd5034576-ee55-4040-a22e-9ea3bb73bf8f';
 const IOS_OUT_PATH = '/Users/yasineren/Desktop/NeYapsak_v1.0.13_74.ipa';
 
 async function poll() {
+  if (isPolling) return;
+  isPolling = true;
   tickCount++;
   try {
     const res = await fetch(`${BOT_URL}/api/gemi-tasks`);
@@ -270,6 +292,8 @@ async function poll() {
       if (data.tasks && data.tasks.length > 0) {
         const remainingForAntigravity = [];
         for (const t of data.tasks) {
+          if (processedIds.has(t.id)) continue;
+          processedIds.add(t.id);
           const isVoice = String(t.id || '').startsWith('GEMI-VOICE-') || t.prompt === '__VOICE_NOTE__';
           if (t.prompt === '__VOICE_NOTE__' && t.audioBase64) {
             const spoken = transcribeVoiceBase64(t.audioBase64);
@@ -297,7 +321,10 @@ async function poll() {
         }
       }
     }
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    isPolling = false;
+  }
 
   // Her 40 saniyede bir iOS App Store Build (d5034576) durumunu kontrol et
   if (!iosBuildNotified && tickCount % 10 === 1) {
