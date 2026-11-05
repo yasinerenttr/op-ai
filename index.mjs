@@ -782,9 +782,12 @@ async function startWhatsApp() {
             continue;
           }
 
-          // B) Patron Eren'in "Siz" sohbetinden (veya "." ile başlayan) Özel Kalem Komutları:
+          // B) Patron Eren'in "Siz" sohbetinden (veya "." / "@gemi" ile başlayan) Özel Kalem Komutları:
           if (
             isSelfChat ||
+            myText.startsWith('@gemi') ||
+            myText.startsWith('.gemi') ||
+            myText.startsWith('gemi ') ||
             myText.startsWith('.ara ') ||
             myText.startsWith('.sesli ') ||
             myText.startsWith('.sekreter ') ||
@@ -803,6 +806,35 @@ async function startWhatsApp() {
             myText.startsWith('.hatirlat ') ||
             myText.startsWith('.hatırlat ')
           ) {
+            // 0. "@gemi <talimat>" veya ".gemi <talimat>" -> Uzaktan Mac'teki Antigravity (Gemi) Ajanına Emir Gönder!
+            const gemiMatch = trimmedRaw.match(/^(?:@gemi|\.gemi|gemi)\s+(.+)$/is);
+            if (gemiMatch) {
+              const promptText = gemiMatch[1].trim();
+              stateData.gemiTasks = stateData.gemiTasks || [];
+              const taskObj = {
+                id: 'GEMI-' + Date.now(),
+                prompt: promptText,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+              };
+              stateData.gemiTasks.push(taskObj);
+              if (stateData.gemiTasks.length > 50) {
+                stateData.gemiTasks = stateData.gemiTasks.slice(-50);
+              }
+              saveData();
+
+              await notifyOwnerSelfChat(
+                `🧠 *@GEMİ (ANTIGRAVITY) UZAKTAN TALİMAT ALINDI!* 🚀\n\n` +
+                `🆔 *Görev Kodu:* #${taskObj.id}\n` +
+                `📌 *Emrin:* "${promptText}"\n\n` +
+                `⚡ Mac bilgisayarındaki *Gemi (Antigravity)* ajanına iletildi. İşlemi tamamlayıp sonucu sana buradan sesli ve yazılı raporlayacak Patron!`
+              );
+              await sendVoiceNote(
+                '905525222988@s.whatsapp.net',
+                `Emriniz alındı Eren Bey. Gemi ajanına talimatınızı ilettim, hemen işleme başlıyor.`
+              );
+              continue;
+            }
             // 1. ".ara 0532xxxxxxx Yarın için müsait misiniz?" veya doğal dille "0532xxxxxxx ara yarın için müsait misiniz"
             const callMatch =
               trimmedRaw.match(/^(?:\.ara|\.sesli|\.sekreter|ara|sesli)\s+(\+?\d[\d\s]{8,15})\s*(.*)$/i) ||
@@ -1442,7 +1474,37 @@ app.get('/api/status', (req, res) => {
     appointments: stateData.appointments || {},
     pendingOutreach: stateData.pendingOutreach || {},
     voiceProfile: stateData.voiceProfile || 'emel',
+    gemiTasks: stateData.gemiTasks || [],
   });
+});
+
+// Uzaktan @gemi Talimatlarını Mac (Antigravity) İçin Listeleme & Tamamlama Endpoint'leri
+app.get('/api/gemi-tasks', (req, res) => {
+  const tasks = (stateData.gemiTasks || []).filter((t) => t.status === 'pending');
+  res.json({ ok: true, tasks });
+});
+
+app.post('/api/gemi-tasks/complete', async (req, res) => {
+  try {
+    const { id, replyText, voiceText } = req.body || {};
+    stateData.gemiTasks = stateData.gemiTasks || [];
+    const found = stateData.gemiTasks.find((t) => t.id === id);
+    if (found) {
+      found.status = 'completed';
+      found.completedAt = new Date().toISOString();
+      found.replyText = replyText || '';
+      saveData();
+    }
+    if (replyText) {
+      await notifyOwnerSelfChat(`✅ *@GEMİ GÖREVİ TAMAMLADI!* 🤖\n\n${replyText}`);
+    }
+    if (voiceText) {
+      await sendVoiceNote('905525222988@s.whatsapp.net', voiceText);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Yeni Neural HD Stüdyo Sesini Test Etme ve Değiştirme Endpoint'i
