@@ -1,0 +1,1122 @@
+{
+  "enabled": true,
+  "replyToKnownContacts": true,
+  "knownCooldownMinutes": 1,
+  "replyDelaySec": 2,
+  "maxStrangerMessages": 8,
+  "autoBlockOnMax": true,
+  "nextQueueNumber": 61,
+  "firstReplyText": "Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim.\n\nNumaranız Eren Bey'in özel rehberinde kayıtlı görünmüyor; siz kimsiniz? Lütfen kendinizi ve hangi konuda ulaşmak istediğinizi tanıtın, sizi görüşme sırasına alıp durumu hemen Eren Bey'e arz edeceğim.",
+  "secondReplyText": "Teşekkür ederim, kimlik bilgilerinizi ve notunuzu Eren Bey'e sundum 📝\n\n📅 Randevu & Görüşme Sıranız: {SIRA}. Sıradasınız (Kayıt Kodu: #AVL-{KOD})\n⏳ Eren Bey programındaki yoğunluğa göre sıranız geldiğinde size dönüş sağlayacaktır.\n\n🎼 Sıranızı beklerken dinlemeniz için Avelon Özel Kalem Bekleme Salonu müziğimiz (Türk Marşı):\nhttps://www.youtube.com/watch?v=quxTnEEETbo\n— Avelon | Eren Bey'in Yapay Zeka Sekreteri 🤖",
+  "blockWarningText": "🚨 Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim.\n\nSizin numaranızı ve profilinizi güvenlik sistemimizde araştırdım; veri tabanımızda *%80 DOLANDIRICI / ŞÜPHELİ NUMARA* olarak gözüküyorsunuz!\n\n🔒 Eren Bey'in güvenliği için iletişim talebiniz reddedilmiş ve numaranız Avelon tarafından *ENGELLENMİŞTİR*.",
+  "knownReplyText": "Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim. Eren Bey şu an yoğun olduğu için mesajınızı kendisine öncelikli olarak ilettim; en kısa zamanda size dönüş sağlayacaktır.",
+  "whoAreYouReplyText": "Ben Avelon 🤖 Yöneticimiz Eren Bey'in Yapay Zeka Özel Kalem ve Yönetici Sekreteriyim. Eren Bey'in yoğun iletişim trafiğini koordine etmek, gelen görüşme taleplerini kaydetmek ve randevu sırasını yönetmek üzere 7/24 görev yapıyorum. İletmek istediğiniz bir not varsa hemen Eren Bey'e arz edebilirim.",
+  "knownNumbers": {
+    "904446661": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "46519076040799",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "904449822": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "268307143856362",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905525222988": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "73560022323225",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "73560022323225": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905525222988",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905520020238": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "232061914902638",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "232061914902638": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905520020238",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905072181475": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "121410655621317",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "121410655621317": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905072181475",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "447723442693": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "135476656738372",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "135476656738372": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "447723442693",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905522047861": {
+      "name": "Fatih",
+      "lid": "221869504479318",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "221869504479318": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905522047861",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "908503059600": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "151836388524083",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "151836388524083": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "908503059600",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905525069341": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "20229379870909",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "20229379870909": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905525069341",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905368300861": {
+      "name": "Nejla Tatar",
+      "lid": "48640622121095",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "48640622121095": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905368300861",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905392738265": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "93836562944240",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "93836562944240": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905392738265",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "908505327000": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "8113260363787",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "8113260363787": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "908505327000",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905323540123": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "118219142623376",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "118219142623376": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905323540123",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905054121081": {
+      "name": "Turgut Tatar",
+      "lid": "261211371397293",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "261211371397293": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905054121081",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "232581203255465": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "232581203255465",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905072650479": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "158892449374424",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "158892449374424": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905072650479",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905528262827": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "184593483362554",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "184593483362554": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905528262827",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905395946550": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "132671556604123",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "132671556604123": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905395946550",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "268307143856362": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "904449822",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905322579881": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "148782146683128",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "148782146683128": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905322579881",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905364571255": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "237112276345005",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "237112276345005": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905364571255",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905525733414": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "264501282742403",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "264501282742403": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905525733414",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905427177510": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "82553650294874",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "82553650294874": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905427177510",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "908502087181": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "248120713703595",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "248120713703595": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "908502087181",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "145208717135988": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "145208717135988",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905525548125": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "187222137508073",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "187222137508073": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905525548125",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905454999462": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "109461670736072",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "109461670736072": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905454999462",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905442628602": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "269586725343233",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "269586725343233": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905442628602",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905339561951": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "261877779181579",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "261877779181579": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905339561951",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905458349353": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "108061427527791",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "108061427527791": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905458349353",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905386148700": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "235355768934613",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "235355768934613": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905386148700",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905317956855": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "123755791671430",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "123755791671430": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905317956855",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905013335436": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "213627680370895",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "213627680370895": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905013335436",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905459744878": {
+      "name": "Efe",
+      "lid": "96254881214718",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "96254881214718": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905459744878",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905354941929": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "148537199304742",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "148537199304742": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905354941929",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "46519076040799": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "904446661",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905077716161": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "192560731582521",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "192560731582521": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905077716161",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905342710585": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "23291708350643",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "23291708350643": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905342710585",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905557543585": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "274444266242152",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "274444266242152": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905557543585",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905387672879": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "123454640627792",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "123454640627792": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905387672879",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "15553251849": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "37023339536562",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "37023339536562": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "15553251849",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905068273004": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "65167689789563",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "65167689789563": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905068273004",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "902123310153": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "183095143739569",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "183095143739569": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "902123310153",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905325738645": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "249662271406282",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "249662271406282": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905325738645",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905340660703": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "117411537809513",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "117411537809513": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905340660703",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905323725351": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "2929268400266",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "2929268400266": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905323725351",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905445655332": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "71691644444860",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "71691644444860": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905445655332",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905050296973": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "257113989329036",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "257113989329036": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905050296973",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905437480205": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "247235564552405",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "247235564552405": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905437480205",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905377971881": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "178495334387953",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "178495334387953": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905377971881",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905354343499": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "103539363831997",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "103539363831997": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905354343499",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905399738772": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "245101100040442",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "245101100040442": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905399738772",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905335276630": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "35841585979603",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "35841585979603": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905335276630",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905431069399": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "275015798923287",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "275015798923287": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905431069399",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "447974904959": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "172146936524879",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "172146936524879": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "447974904959",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905333076045": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "39187348717772",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "39187348717772": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905333076045",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905451357550": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "247751178760414",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "247751178760414": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905451357550",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "908503021854": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "106906702069998",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "106906702069998": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "908503021854",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905550065248": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "184447488016395",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "184447488016395": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905550065248",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905349273488": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "254206313279532",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "254206313279532": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905349273488",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "902127068607": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "17425386963096",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "17425386963096": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "902127068607",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905445657169": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "139139911561365",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "139139911561365": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905445657169",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905055812206": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "214232985563154",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "214232985563154": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905055812206",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905521705858": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "134939634835688",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "134939634835688": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905521705858",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905349803160": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "67396710744224",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "67396710744224": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905349803160",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905383607487": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "89339816087738",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "89339816087738": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905383607487",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905535124886": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "32500051103890",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "32500051103890": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905535124886",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905524477763": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "66215712153772",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "66215712153772": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905524477763",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905380516619": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "162710742368328",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "162710742368328": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905380516619",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905322548415": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "90426308575267",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "90426308575267": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905322548415",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905524544343": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "19512137101329",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "19512137101329": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905524544343",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905352060895": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "265622537638009",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "265622537638009": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905352060895",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905344107556": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "7537684385894",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "7537684385894": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905344107556",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905304814761": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "126448266428661",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "126448266428661": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905304814761",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905366025355": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "190774058692626",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "190774058692626": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905366025355",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905354806990": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "119700839248096",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "119700839248096": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905354806990",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905384253615": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "224918998351915",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "224918998351915": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905384253615",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905426066630": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "251766906032153",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "251766906032153": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905426066630",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "908502428026": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "195966959353992",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "195966959353992": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "908502428026",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905349874004": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "97685356949738",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "97685356949738": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905349874004",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905539736042": {
+      "name": "Aktif Rehber Kişisi",
+      "lid": "186410288029928",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "186410288029928": {
+      "name": "Aktif Rehber Kişisi",
+      "phone": "905539736042",
+      "source": "Telefon Rehberi",
+      "addedAt": "2026-11-04T09:44:03.801Z",
+      "lastAutoReplyAt": 0
+    },
+    "905530862659": {
+      "name": "Ablam Baş Sultan (Merve Çivelek)",
+      "source": "Rehber",
+      "addedAt": "2026-11-04T19:30:00.000Z",
+      "lastAutoReplyAt": 0
+    },
+    "220684026380388": {
+      "name": "Ablam Baş Sultan (Merve Çivelek)",
+      "source": "Rehber (LID)",
+      "addedAt": "2026-11-04T19:30:00.000Z",
+      "lastAutoReplyAt": 0
+    }
+  },
+  "strangerStages": {},
+  "removedFromKnown": {}
+}
