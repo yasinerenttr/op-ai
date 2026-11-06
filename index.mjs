@@ -744,90 +744,239 @@ const VOICE_PROFILES = {
 
 stateData.voiceProfile = stateData.voiceProfile || 'emel';
 
+// Tekrar kullanılabilir Stüdyo Kalitesinde Neural HD MP3 Üretici (WhatsApp Sesli Not + Canlı Telefon Jarvis Hoparlörü için)
+async function generateNeuralMp3Buffer(spokenText, overrideVoiceKey = null) {
+  if (!spokenText) return null;
+  const cleanSpeech = String(spokenText)
+    .replace(/[*_~`#]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/\bBTM\b/g, 'B T M')
+    .replace(/\bİTO\b/g, 'İ T O')
+    .replace(/#AVL-/gi, 'Avelon ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const selectedKey = overrideVoiceKey || stateData.voiceProfile || 'emel';
+  const profile = VOICE_PROFILES[selectedKey] || VOICE_PROFILES.emel;
+
+  let fullMp3 = null;
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(profile.id, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(cleanSpeech, {
+      rate: profile.rate,
+      pitch: profile.pitch,
+    });
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Neural TTS timeout')), 12000);
+      audioStream.on('data', (c) => chunks.push(c));
+      audioStream.on('end', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      audioStream.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+    try { tts.close(); } catch (_) {}
+    if (chunks.length > 0) {
+      fullMp3 = Buffer.concat(chunks);
+    }
+  } catch (neuralErr) {
+    console.error('Neural HD TTS yedek motora geçiyor:', neuralErr.message);
+  }
+
+  if (!fullMp3 || fullMp3.length < 500) {
+    const words = cleanSpeech.split(' ');
+    const chunks = [];
+    let current = '';
+    for (const w of words) {
+      if ((current + ' ' + w).trim().length > 165) {
+        if (current.trim()) chunks.push(current.trim());
+        current = w;
+      } else {
+        current = (current + ' ' + w).trim();
+      }
+    }
+    if (current.trim()) chunks.push(current.trim());
+
+    const mp3Buffers = [];
+    for (const chunk of chunks) {
+      const ttsUrl =
+        'https://translate.google.com/translate_tts?ie=UTF-8&tl=tr&client=tw-ob&q=' +
+        encodeURIComponent(chunk);
+      const res = await fetch(ttsUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+      });
+      if (res.ok) {
+        mp3Buffers.push(Buffer.from(await res.arrayBuffer()));
+      }
+    }
+    if (mp3Buffers.length > 0) {
+      fullMp3 = Buffer.concat(mp3Buffers);
+    }
+  }
+
+  return { fullMp3, profile };
+}
+
+// 🧠 AVELON JARVIS YAPAY ZEKA BEYNİ (Sesli & Yazılı Tüm Sohbet ve Komutları Yönetir)
+async function askJarvisBrain(rawInput) {
+  const text = String(rawInput || '').trim();
+  const low = text.toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+
+  // 1) Sadece "Avelon" / "Hey Avelon" / "Alo Avelon" / "Orada mısın" seslenişi
+  if (
+    low === 'avelon' ||
+    low === 'avalon' ||
+    low === 'hey avelon' ||
+    low === 'hey avalon' ||
+    low === 'alo avelon' ||
+    low === 'avelon orada mısın' ||
+    low === 'orada mısın' ||
+    low === 'jarvis' ||
+    low === 'hey jarvis'
+  ) {
+    return {
+      spoken: 'Efendim Patron! Sizi dinliyorum, emriniz nedir?',
+      display: '⚡ *EFENDİM PATRON!* 👑\n\nSizi dinliyorum, emriniz nedir?',
+    };
+  }
+
+  // Başında "avelon " veya "hey avelon " varsa temizleyip komuta bak
+  const cleanCmd = low.replace(/^(?:hey\s+|alo\s+)?(?:avelon|avalon|jarvis)\s+/i, '').trim();
+
+  // 2) Telefon Bulucu
+  if (
+    cleanCmd.includes('telefonumu bul') ||
+    cleanCmd.includes('telefonu çaldır') ||
+    cleanCmd.includes('telefon nerede')
+  ) {
+    startFindMyPhoneSiren('Avelon Jarvis Sesli Komut').catch(() => {});
+    return {
+      spoken: 'Emredersiniz Patron! Telefonunuzu Google Cihazımı Bul ve bildirim sireniyle tam ses çaldırıyorum.',
+      display: '📞 *TELEFON BULUCU SİREN BAŞLATILDI PATRON!* 🚨',
+    };
+  }
+
+  // 3) Mail Kontrolü
+  if (cleanCmd.includes('mail') || cleanCmd.includes('eposta') || cleanCmd.includes('e-posta')) {
+    const summaries = await pollAllMailAccounts(true).catch(() => []);
+    if (summaries && summaries.length > 0) {
+      return {
+        spoken: 'Efendim Patron, bağlı üç e-posta hesabınızı kontrol ettim ve son gelen mailleri ekranınıza listeledim.',
+        display: `📧 *AVELON E-POSTA ÖZETİ*\n\n${summaries.join('\n\n')}`,
+      };
+    }
+    return {
+      spoken: 'Efendim Patron, e-posta kutularınızı kontrol ettim, şu an okunmamış yeni bir ileti görünmüyor.',
+      display: '📭 Bağlı e-posta kutularında yeni ileti bulunamadı.',
+    };
+  }
+
+  // 4) Sistem / Admin / QRes / NeYapsak Durumu
+  if (
+    cleanCmd.includes('admin') ||
+    cleanCmd.includes('sistem durumu') ||
+    cleanCmd.includes('kaç kullanıcı') ||
+    cleanCmd.includes('qres') ||
+    cleanCmd.includes('muamma') ||
+    cleanCmd.includes('2art') ||
+    cleanCmd.includes('iki art')
+  ) {
+    try {
+      const NEYAPSAK_API = 'https://jellyfish-app-oydmg.ondigitalocean.app/api/admin';
+      const NEYAPSAK_KEY = 'neyapsak_admin_secret_key_2026_secure';
+      const QRES_API = 'https://web-production-b7541.up.railway.app/api/super';
+      const QRES_KEY = 'neyapsak_super_admin_secret';
+      const [nyRes, qresStatsRes] = await Promise.all([
+        fetch(`${NEYAPSAK_API}/dashboard-data`, { headers: { 'x-admin-key': NEYAPSAK_KEY } }),
+        fetch(`${QRES_API}/stats`, { headers: { 'x-admin-secret': QRES_KEY } }),
+      ]);
+      const ny = await nyRes.json().catch(() => ({}));
+      const qStats = (await qresStatsRes.json().catch(() => ({}))).data || {};
+      return {
+        spoken: `Efendim Patron, Tatar Endüstri komuta merkezinde şu an Ne Yapsak uygulamasında ${ny.users || 0} kayıtlı kullanıcı var. QRes sisteminde ise toplam ${qStats.totalQrScans || 0} QR okutma ve ${qStats.totalRevenue || 0} lira ciro bulunuyor.`,
+        display:
+          `🏭 *TATAR ENDÜSTRİ — CANLI RAPOR* ⚡\n\n` +
+          `📱 *NeYapsak:* ${ny.users || 0} Kullanıcı | ${ny.weeklyActive || 0} Aktif\n` +
+          `🍽️ *QRes:* ${(qStats.totalQrScans || 0).toLocaleString('tr-TR')} QR Okutma | ${(qStats.totalRevenue || 0).toLocaleString('tr-TR')} ₺ Ciro`,
+      };
+    } catch (_) {}
+  }
+
+  // 5) Mac Bilgisayar Kontrolü (bilgisayarı aç, ekranı kapat, youtube aç, sesi fulle)
+  if (
+    cleanCmd.includes('bilgisayarı aç') ||
+    cleanCmd.includes('bilgisayari ac') ||
+    cleanCmd.includes('ekranı aç') ||
+    cleanCmd.includes('pc aç') ||
+    cleanCmd.includes('uyku mod') ||
+    cleanCmd.includes('ekranı kapat') ||
+    cleanCmd.includes('sesi fulle') ||
+    cleanCmd.includes('sesi kıs') ||
+    cleanCmd.includes('youtube')
+  ) {
+    stateData.gemiTasks = stateData.gemiTasks || [];
+    stateData.gemiTasks.push({
+      id: 'GEMI-JARVIS-' + Date.now(),
+      prompt: cleanCmd,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
+    saveData();
+    return {
+      spoken: 'Emredersiniz Patron! Mac bilgisayarınızda işlemi hemen gerçekleştiriyorum.',
+      display: `💻 *MAC KOMUTU İLETİLDİ PATRON:* "${cleanCmd}" ⚡`,
+    };
+  }
+
+  // 6) Genel Yapay Zeka Jarvis Sohbeti (Pollinations OpenAI)
+  try {
+    const sysPrompt =
+      'Sen Yasin Eren Tatar\'ın (Patron Eren) özel yapay zeka sağ kolu ve sesli asistanı Avelon\'sun (Tony Stark\'ın Jarvis\'i gibi). ' +
+      'Eren 20 yaşında çok yetenekli bir yazılım kurucusu; tek başına NeYapsak (13 dilli iOS/Android sosyal mekan keşif ve grup oylama uygulaması), ' +
+      'QRes (Apple App Clip ve akıllı QR restoran sipariş sistemi) ve MezatPazarı projelerini geliştirdi, İTO BTM\'ye kabul aldı. ' +
+      'Ona her zaman "Efendim Patron" veya "Patron" diye hitap et. Cevapların çok kısa (en fazla 2-3 cümle), sesli okunmaya uygun, doğal, samimi, zeki ve güç verici olsun. Emoji veya yıldız kullanma.';
+    const aiRes = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: text },
+        ],
+        model: 'openai',
+      }),
+    });
+    if (aiRes.ok) {
+      const reply = (await aiRes.text()).trim();
+      if (reply && reply.length > 2) {
+        return {
+          spoken: reply,
+          display: `🤖 *AVELON JARVIS:*\n${reply}`,
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Jarvis AI error:', e.message);
+  }
+
+  return {
+    spoken: 'Efendim Patron, sizi dinliyorum. Her zaman yanınızdayım ve emrinizdeyim.',
+    display: '🤖 *AVELON JARVIS:* Efendim Patron, sizi dinliyorum. Her zaman yanınızdayım ve emrinizdeyim.',
+  };
+}
+
 // Türkçe Yapay Zeka Sekreter Sesli Mesajı (🎤 Mavi Mikrofon / PTT - Neural HD Stüdyo Sesi)
 async function sendVoiceNote(targetJid, spokenText, overrideVoiceKey = null) {
   if (!sock || !spokenText) return null;
   try {
     await sock.sendPresenceUpdate('recording', targetJid);
-
-    // Metni doğal insan konuşmasına uygun hale getir (emoji, markdown, link temizliği + doğal vurgu)
-    const cleanSpeech = spokenText
-      .replace(/[*_~`#]/g, '')
-      .replace(/https?:\/\/\S+/g, '')
-      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
-      .replace(/\bBTM\b/g, 'B T M')
-      .replace(/\bİTO\b/g, 'İ T O')
-      .replace(/#AVL-/gi, 'Avelon ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const selectedKey = overrideVoiceKey || stateData.voiceProfile || 'emel';
-    const profile = VOICE_PROFILES[selectedKey] || VOICE_PROFILES.emel;
-
-    let fullMp3 = null;
-
-    // 1. Birincil Motor: Microsoft Azure Neural HD (EmelNeural / AhmetNeural - Gerçek İnsan Tonlaması)
-    try {
-      const tts = new MsEdgeTTS();
-      await tts.setMetadata(profile.id, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      const { audioStream } = tts.toStream(cleanSpeech, {
-        rate: profile.rate,
-        pitch: profile.pitch,
-      });
-      const chunks = [];
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Neural TTS timeout')), 12000);
-        audioStream.on('data', (c) => chunks.push(c));
-        audioStream.on('end', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        audioStream.on('error', (err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
-      });
-      try {
-        tts.close();
-      } catch (_) {}
-      if (chunks.length > 0) {
-        fullMp3 = Buffer.concat(chunks);
-      }
-    } catch (neuralErr) {
-      console.error('Neural HD TTS yedek motora geçiyor:', neuralErr.message);
-    }
-
-    // 2. Yedek Motor (Sadece Neural HD bağlantısı koparsa)
-    if (!fullMp3 || fullMp3.length < 500) {
-      const words = cleanSpeech.split(' ');
-      const chunks = [];
-      let current = '';
-      for (const w of words) {
-        if ((current + ' ' + w).trim().length > 165) {
-          if (current.trim()) chunks.push(current.trim());
-          current = w;
-        } else {
-          current = (current + ' ' + w).trim();
-        }
-      }
-      if (current.trim()) chunks.push(current.trim());
-
-      const mp3Buffers = [];
-      for (const chunk of chunks) {
-        const ttsUrl =
-          'https://translate.google.com/translate_tts?ie=UTF-8&tl=tr&client=tw-ob&q=' +
-          encodeURIComponent(chunk);
-        const res = await fetch(ttsUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
-        });
-        if (res.ok) {
-          mp3Buffers.push(Buffer.from(await res.arrayBuffer()));
-        }
-      }
-      if (mp3Buffers.length > 0) {
-        fullMp3 = Buffer.concat(mp3Buffers);
-      }
-    }
+    const { fullMp3, profile } = (await generateNeuralMp3Buffer(spokenText, overrideVoiceKey)) || {};
 
     if (!fullMp3 || fullMp3.length === 0) {
       await sock.sendPresenceUpdate('paused', targetJid);
@@ -1312,8 +1461,18 @@ async function startWhatsApp() {
                     extractedText = '.takvim';
                   } else if (sLow.includes('uyku')) {
                     extractedText = '.uyku modu';
-                  } else {
-                    // Mac veya @gemi komutuysa Mac kuyruğuna ekle
+                  } else if (
+                    sLow.includes('bilgisayar') ||
+                    sLow.includes('ekranı aç') ||
+                    sLow.includes('ekrani ac') ||
+                    sLow.includes('ekranı kapat') ||
+                    sLow.includes('youtube') ||
+                    sLow.includes('şarkı') ||
+                    sLow.includes('müzik') ||
+                    sLow.includes('sesi fulle') ||
+                    sLow.includes('sesi kıs')
+                  ) {
+                    // Mac komutuysa Mac kuyruğuna ekle
                     stateData.gemiTasks = stateData.gemiTasks || [];
                     stateData.gemiTasks.push({
                       id: 'GEMI-VOICE-' + Date.now(),
@@ -1323,6 +1482,9 @@ async function startWhatsApp() {
                     });
                     saveData();
                     continue;
+                  } else {
+                    // Doğrudan Avelon Jarvis olarak hemen yanıtla ("Avelon", sohbet, soru vb.)
+                    extractedText = cloudSpoken;
                   }
                 } else {
                   // Yedek olarak Mac kuyruğuna gönder
@@ -1989,6 +2151,16 @@ async function startWhatsApp() {
               );
               continue;
             }
+
+            // 7. AVELON JARVIS SERBEST SESLİ & YAZILI ASİSTAN ("Avelon" seslenişi ve her türlü sohbet/soru)
+            if (isSelfChat && trimmedRaw) {
+              const jarvisRes = await askJarvisBrain(trimmedRaw);
+              if (jarvisRes) {
+                await notifyOwnerSelfChat(jarvisRes.display, '🤖 Avelon Jarvis');
+                await sendVoiceNote('905525222988@s.whatsapp.net', jarvisRes.spoken);
+              }
+              continue;
+            }
           }
 
           if (isSelfChat) continue;
@@ -2650,6 +2822,402 @@ app.post('/api/check-mail', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// 🎙️ AVELON JARVIS — CANLI TELEFON HOPARLÖRÜ TTS & KOMUT API
+let cachedWakeMp3Base64 = null;
+app.get('/api/jarvis-wake-audio', async (req, res) => {
+  try {
+    if (!cachedWakeMp3Base64) {
+      const { fullMp3 } = (await generateNeuralMp3Buffer('Efendim Patron, sizi dinliyorum!')) || {};
+      if (fullMp3) cachedWakeMp3Base64 = fullMp3.toString('base64');
+    }
+    res.json({ ok: true, audioBase64: cachedWakeMp3Base64 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/jarvis-command', async (req, res) => {
+  try {
+    const { text, alsoSendWhatsApp } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'Metin gerekli' });
+    const jarvisRes = await askJarvisBrain(text);
+    const { fullMp3 } = (await generateNeuralMp3Buffer(jarvisRes.spoken)) || {};
+    const audioBase64 = fullMp3 ? fullMp3.toString('base64') : null;
+
+    if (alsoSendWhatsApp) {
+      notifyOwnerSelfChat(jarvisRes.display, '🤖 Avelon Jarvis').catch(() => {});
+    }
+
+    res.json({
+      ok: true,
+      spoken: jarvisRes.spoken,
+      display: jarvisRes.display,
+      audioBase64,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🦾 AVELON JARVIS — TONY STARK CANLI TELEFON & MASAÜSTÜ SESLİ KOMUTA EKRANI (/jarvis)
+app.get('/jarvis', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#050811" />
+  <title>AVELON JARVIS — Tatar Endüstri</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body {
+      background: radial-gradient(circle at center, #0a192f 0%, #040711 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 18px;
+      overflow-x: hidden;
+    }
+    .top-bar {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.1);
+    }
+    .brand {
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: 1.5px;
+      color: #38bdf8;
+    }
+    .status-pill {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .reactor-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    .reactor {
+      width: 210px;
+      height: 210px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(14, 165, 233, 0.08) 60%, transparent 75%);
+      border: 3px solid rgba(56, 189, 248, 0.65);
+      box-shadow: 0 0 45px rgba(56, 189, 248, 0.45), inset 0 0 35px rgba(56, 189, 248, 0.35);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .reactor.listening {
+      border-color: #22c55e;
+      box-shadow: 0 0 65px rgba(34, 197, 94, 0.65), inset 0 0 40px rgba(34, 197, 94, 0.4);
+      animation: pulseGreen 1.6s infinite;
+    }
+    .reactor.speaking {
+      border-color: #f59e0b;
+      box-shadow: 0 0 75px rgba(245, 158, 11, 0.75), inset 0 0 45px rgba(245, 158, 11, 0.5);
+      animation: pulseGold 0.9s infinite;
+    }
+    @keyframes pulseGreen {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+    }
+    @keyframes pulseGold {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.09); }
+    }
+    .reactor-core {
+      font-size: 46px;
+      margin-bottom: 6px;
+    }
+    .reactor-label {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #f8fafc;
+    }
+    .state-title {
+      margin-top: 20px;
+      font-size: 20px;
+      font-weight: 800;
+      text-align: center;
+      color: #fff;
+    }
+    .state-sub {
+      margin-top: 6px;
+      font-size: 13.5px;
+      color: #94a3b8;
+      text-align: center;
+      max-width: 340px;
+      line-height: 1.45;
+    }
+    .console-box {
+      width: 100%;
+      max-width: 480px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 18px;
+      padding: 18px;
+      min-height: 120px;
+    }
+    .heard-text {
+      font-size: 13px;
+      color: #38bdf8;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .reply-text {
+      font-size: 15px;
+      color: #f8fafc;
+      line-height: 1.5;
+      font-weight: 600;
+      white-space: pre-line;
+    }
+    .quick-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .q-btn {
+      flex: 1;
+      min-width: 110px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      background: rgba(30, 41, 59, 0.8);
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="brand">⚡ AVELON JARVIS</div>
+    <div id="modeBadge" class="status-pill">BAŞLATMAK İÇİN DOKUN</div>
+  </div>
+
+  <div class="reactor-wrap">
+    <div id="reactorBtn" class="reactor" onclick="toggleJarvis()">
+      <div class="reactor-core" id="reactorIcon">🎙️</div>
+      <div class="reactor-label" id="reactorLabel">BAŞLAT</div>
+    </div>
+    <div class="state-title" id="stateTitle">Avelon Sesli Jarvis Hazır</div>
+    <div class="state-sub" id="stateSub">Ortadaki çekirdeğe bir kez dokun; sonra telefonuna hiç dokunmadan <b>"Avelon"</b> dediğinde <b>"Efendim Patron!"</b> diyerek seni dinler.</div>
+  </div>
+
+  <div class="console-box">
+    <div class="heard-text" id="heardBox">👂 Duyulan: Bekleniyor...</div>
+    <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim.</div>
+    <div class="quick-row">
+      <button class="q-btn" onclick="sendManual('Avelon')">🗣️ "Avelon" De</button>
+      <button class="q-btn" onclick="sendManual('Maillerime bak')">📧 Maillerim</button>
+      <button class="q-btn" onclick="sendManual('Sistem durumu')">📊 Sistem Raporu</button>
+    </div>
+  </div>
+
+  <script>
+    let isListening = false;
+    let isSpeaking = false;
+    let awaitingCommandAfterWake = false;
+    let recognition = null;
+    let wakeAudioBase64 = null;
+    const audioPlayer = new Audio();
+
+    // Sayfa açılır açılmaz "Efendim Patron, sizi dinliyorum!" sesini önbelleğe al (0 saniye gecikme!)
+    fetch('/api/jarvis-wake-audio')
+      .then(r => r.json())
+      .then(d => { if (d.audioBase64) wakeAudioBase64 = d.audioBase64; })
+      .catch(() => {});
+
+    function playBase64Mp3(b64) {
+      return new Promise((resolve) => {
+        if (!b64) return resolve();
+        isSpeaking = true;
+        const r = document.getElementById('reactorBtn');
+        r.classList.remove('listening');
+        r.classList.add('speaking');
+        document.getElementById('reactorIcon').textContent = '🔊';
+        document.getElementById('reactorLabel').textContent = 'KONUŞUYOR';
+
+        audioPlayer.src = 'data:audio/mp3;base64,' + b64;
+        audioPlayer.onended = () => {
+          isSpeaking = false;
+          r.classList.remove('speaking');
+          if (isListening) r.classList.add('listening');
+          document.getElementById('reactorIcon').textContent = '🎙️';
+          document.getElementById('reactorLabel').textContent = awaitingCommandAfterWake ? 'EMRİNİ SÖYLE' : 'DİNLİYOR';
+          resolve();
+        };
+        audioPlayer.onerror = () => {
+          isSpeaking = false;
+          r.classList.remove('speaking');
+          resolve();
+        };
+        audioPlayer.play().catch(() => {
+          isSpeaking = false;
+          resolve();
+        });
+      });
+    }
+
+    async function handleSpokenPhrase(phrase) {
+      const clean = (phrase || '').trim();
+      if (!clean || isSpeaking) return;
+      document.getElementById('heardBox').textContent = '👂 Duyulan: "' + clean + '"';
+
+      const low = clean.toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+      const hasWakeWord =
+        low.includes('avelon') ||
+        low.includes('avalon') ||
+        low.includes('abalone') ||
+        low.includes('apollon') ||
+        low.includes('jarvis');
+
+      // Eğer sadece "Avelon" / "Hey Avelon" dediyse ANINDA "Efendim Patron!" sesini çal ve emir modunu aç!
+      const afterWake = low.replace(/^(?:hey\\s+|alo\\s+)?(?:avelon|avalon|abalone|apollon|jarvis)\\s*/i, '').trim();
+      if (hasWakeWord && !afterWake) {
+        awaitingCommandAfterWake = true;
+        document.getElementById('replyBox').textContent = '⚡ Efendim Patron! Sizi dinliyorum, emriniz nedir?';
+        document.getElementById('stateTitle').textContent = 'Efendim Patron! Sizi Dinliyorum...';
+        if (wakeAudioBase64) {
+          await playBase64Mp3(wakeAudioBase64);
+        } else {
+          await sendManual('Avelon');
+        }
+        return;
+      }
+
+      // Eğer "Avelon <komut>" dediyse veya zaten "Efendim Patron" dedikten sonraki cümlesini söylediyse:
+      if (hasWakeWord || awaitingCommandAfterWake) {
+        awaitingCommandAfterWake = false;
+        const cmdToSend = afterWake || clean;
+        await sendManual(cmdToSend);
+      }
+    }
+
+    async function sendManual(text) {
+      try {
+        document.getElementById('heardBox').textContent = '👂 Komut: "' + text + '"';
+        document.getElementById('replyBox').textContent = '⏳ Avelon düşünüyor...';
+        const res = await fetch('/api/jarvis-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('replyBox').textContent = data.display || data.spoken;
+          document.getElementById('stateTitle').textContent = 'Avelon Yanıtlıyor';
+          if (data.audioBase64) {
+            await playBase64Mp3(data.audioBase64);
+          }
+          document.getElementById('stateTitle').textContent = 'Sürekli Dinleme Aktif ("Avelon" de)';
+        }
+      } catch (e) {
+        document.getElementById('replyBox').textContent = 'Bağlantı hatası: ' + e.message;
+      }
+    }
+
+    async function toggleJarvis() {
+      // İlk dokunuşta mobil tarayıcı ses kilidini aç ve "Efendim Patron!" de
+      if (!isListening) {
+        isListening = true;
+        try {
+          if ('wakeLock' in navigator) {
+            await navigator.wakeLock.request('screen').catch(() => {});
+          }
+        } catch (_) {}
+
+        document.getElementById('modeBadge').textContent = '🟢 7/24 DİNLİYOR ("AVELON" DE)';
+        document.getElementById('reactorBtn').classList.add('listening');
+        document.getElementById('reactorLabel').textContent = 'DİNLİYOR';
+        document.getElementById('stateTitle').textContent = 'Efendim Patron! Sizi Dinliyorum';
+        document.getElementById('stateSub').textContent = 'İstediğin an "Avelon" diye seslenebilir veya doğrudan emrini söyleyebilirsin.';
+
+        awaitingCommandAfterWake = true;
+        if (wakeAudioBase64) {
+          await playBase64Mp3(wakeAudioBase64);
+        } else {
+          await sendManual('Avelon');
+        }
+        startSpeechRecognition();
+      } else {
+        // Zaten açıksa dokununca direkt "Efendim Patron" deyip komut beklesin
+        awaitingCommandAfterWake = true;
+        if (wakeAudioBase64) {
+          await playBase64Mp3(wakeAudioBase64);
+        } else {
+          await sendManual('Avelon');
+        }
+      }
+    }
+
+    function startSpeechRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        document.getElementById('stateSub').textContent = 'Tarayıcınız canlı mikrofonu desteklemiyor, alttaki butonları kullanabilirsiniz.';
+        return;
+      }
+      if (recognition) {
+        try { recognition.stop(); } catch (_) {}
+      }
+      recognition = new SR();
+      recognition.lang = 'tr-TR';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onresult = (event) => {
+        const last = event.results[event.results.length - 1];
+        if (last && last.isFinal) {
+          const transcript = last[0].transcript;
+          handleSpokenPhrase(transcript);
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListening) {
+          setTimeout(() => {
+            try { recognition.start(); } catch (_) {}
+          }, 300);
+        }
+      };
+
+      try { recognition.start(); } catch (_) {}
+    }
+  </script>
+</body>
+</html>`);
 });
 
 // Saat 10:00 Sabah Uyandırma Alarmı (Hem Mac Sesli Uyandırma Hem WhatsApp "Siz" Mesajı)

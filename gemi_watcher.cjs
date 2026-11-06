@@ -156,6 +156,21 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     );
     return true;
   }
+  if (low === '.ses' || low.startsWith('.ses ')) {
+    await completeTask(
+      task.id,
+      `🎙️ *SESLİ EMİR DİNLEME MODU AKTİF PATRON!* 👑\n\n` +
+        `Şimdi mikrofona basıp *Ses Kaydı (🎤)* atarak istediğin her şeyi söyleyebilirsin!\n\n` +
+        `💡 *Örnek Sesli Emirler:*\n` +
+        `• _"Bilgisayarı aç"_\n` +
+        `• _"Telefonumu bul"_\n` +
+        `• _"Tantavi kaç kişi okuttu"_\n` +
+        `• _"Maillerime bak"_\n` +
+        `• _"YouTube'dan Barış Manço aç"_`,
+      `Sizi dinliyorum Eren Bey. Ses kaydı göndererek istediğiniz emri verebilirsiniz.`
+    );
+    return true;
+  }
 
   // 3.2) TELEFON BULUCU & SAHTE ARAMA (.telefon, .telfon, telefonumu bul, telefonu çaldır)
   if (
