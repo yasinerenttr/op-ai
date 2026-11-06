@@ -609,49 +609,77 @@ async function handleMacBackgroundSpoken(rawPhrase) {
   const hasWakeWord =
     low.includes('avelon') ||
     low.includes('avalon') ||
+    low.includes('avlon') ||
     low.includes('abalone') ||
     low.includes('apollon') ||
-    low.includes('jarvis');
+    low.includes('jarvis') ||
+    low === 'alo';
 
-  const afterWake = low.replace(/^(?:hey\s+|alo\s+)?(?:avelon|avalon|abalone|apollon|jarvis)\s*/i, '').trim();
+  const afterWake = low.replace(/^(?:hey\s+|alo\s+)?(?:avelon|avalon|avlon|abalone|apollon|jarvis)\s*/i, '').trim();
 
   // Sadece "Avelon" dediyse -> Anında Mac hoparlöründen "Efendim Patron, sizi dinliyorum!"
   if (hasWakeWord && !afterWake) {
-    macActiveWindowUntil = Date.now() + 45000;
+    macActiveWindowUntil = Date.now() + 180000;
     await ensureWakeMp3();
     await playMp3OnMacWithoutEcho(WAKE_MP3_PATH, 'Efendim Patron sizi dinliyorum');
     return;
   }
 
-  // "Avelon <komut>" dediyse veya aktif 45 sn penceresindeyse:
+  // "Avelon <komut>" dediyse veya aktif 3 dk penceresindeyse:
   if (hasWakeWord || Date.now() < macActiveWindowUntil) {
-    macActiveWindowUntil = Date.now() + 45000;
+    macActiveWindowUntil = Date.now() + 180000;
     const cmdText = afterWake || clean;
 
     // 1) Önce yerel Mac tam yetki komutlarına bak (ses, ekran, youtube, uygulama açma, pil, screenshot, qres)
-    let localSpoken = '';
-    const fakeTask = {
-      id: 'LOCAL-MAC-' + Date.now(),
-      prompt: cmdText,
-    };
-    const origComplete = completeTask;
-    // Yerel komutu çalıştırırken sesli yanıtı da Mac hoparlöründen oku
     try {
       const handledLocal = await handleInstantMacCommand(
         {
-          id: fakeTask.id,
+          id: 'LOCAL-MAC-' + Date.now(),
           prompt: cmdText,
         },
         false
       );
       if (handledLocal) {
-        // handleInstantMacCommand sunucuya completeTask gönderdi, ayrıca Mac'te sesli söyleyelim:
         await speakTextOnMac(`Emredersiniz Patron, ${cmdText} işlemini hemen gerçekleştirdim.`);
         return;
       }
     } catch (_) {}
 
-    // 2) Canlı Jarvis Beynine (QRes Aç/Kapat, Mail, WhatsApp, Hafızalı AI) sor ve Mac hoparlöründen konuş
+    // 2) Doğrudan Gemini 2.5 Flash Beyni ile 1 saniyede yanıtla ve Mac hoparlöründen seslendir!
+    try {
+      const gemKey = Buffer.from('QUl6YVN5QXlRaGlwMjNhcFZLSF9fV0dVU1FZME1kaDNqSFNDS2ZR', 'base64').toString('utf8');
+      const sysPrompt =
+        'Sen Yasin Eren Tatar\'ın (Patron Eren) özel yapay zeka sağ kolu, başmühendisi ve her şeyi bilen sesli asistanı Avelon\'sun (Tony Stark\'ın Jarvis\'i gibi). ' +
+        'Sana gündelik hayattan bilgi, bilim, tarih, genel kültür, tavsiye, matematik, yazılım veya sohbet sorulduğunda doğrudan, çok ilginç, doğru ve doyurucu bilgi ver. ' +
+        'Ona "Efendim Patron" veya "Patron" diye hitap et. Cevapların çok akıcı, zeki, Türkçe (2-3 cümle) ve sesli okunmaya uygun olsun. Asla yıldız veya emoji kullanma.';
+
+      const gRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gemKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sysPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: cmdText }] }],
+            generationConfig: {
+              temperature: 0.7,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          }),
+        }
+      );
+      if (gRes.ok) {
+        const gJson = await gRes.json();
+        const reply = (gJson.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/[*_#`~]/g, '').trim();
+        if (reply) {
+          sendSelfNote(`🤖 *AVELON SESLİ YANIT:*\n🗣️ *Soru:* "${cmdText}"\n💡 *Cevap:* ${reply}`).catch(() => {});
+          await speakTextOnMac(reply);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 3) Yedek: Canlı sunucu üzerinden sor
     try {
       const res = await fetch(`${BOT_URL}/api/jarvis-command`, {
         method: 'POST',
@@ -659,15 +687,8 @@ async function handleMacBackgroundSpoken(rawPhrase) {
         body: JSON.stringify({ text: cmdText, alsoSendWhatsApp: true }),
       });
       const data = await res.json();
-      if (data && data.ok && !data.ignore) {
-        if (data.audioBase64) {
-          const tmpReply = `/tmp/jarvis_srv_${Date.now()}.mp3`;
-          fs.writeFileSync(tmpReply, Buffer.from(data.audioBase64, 'base64'));
-          await playMp3OnMacWithoutEcho(tmpReply, data.spoken);
-          try { fs.unlinkSync(tmpReply); } catch (_) {}
-        } else if (data.spoken) {
-          await speakTextOnMac(data.spoken);
-        }
+      if (data && data.ok && !data.ignore && data.spoken) {
+        await speakTextOnMac(data.spoken);
       }
     } catch (e) {
       await speakTextOnMac('Efendim Patron, sizi dinliyorum ve emrinizdeyim.');
@@ -676,6 +697,9 @@ async function handleMacBackgroundSpoken(rawPhrase) {
 }
 
 function startMacBackgroundVoiceJarvis() {
+  try {
+    execSync('osascript -e "set volume input volume 100"');
+  } catch (_) {}
   ensureWakeMp3().catch(() => {});
   const ffPath = fs.existsSync(FFMPEG_BIN) ? FFMPEG_BIN : 'ffmpeg';
 
@@ -691,7 +715,7 @@ proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, 
 
 r = sr.Recognizer()
 FRAME_BYTES = 6400 # 0.2 sn (16000 Hz * 2 byte * 0.2)
-pre_roll = collections.deque(maxlen=3)
+pre_roll = collections.deque(maxlen=4)
 speech_frames = []
 silent_count = 0
 cooldown_frames = 0
@@ -705,7 +729,7 @@ while True:
         pre_roll.clear()
         speech_frames.clear()
         silent_count = 0
-        cooldown_frames = 4
+        cooldown_frames = 5
         continue
 
     if cooldown_frames > 0:
@@ -716,7 +740,7 @@ while True:
 
     rms = audioop.rms(frame, 2)
     if len(speech_frames) == 0:
-        if rms > 115:
+        if rms > 42:
             speech_frames.extend(pre_roll)
             speech_frames.append(frame)
             silent_count = 0
@@ -724,19 +748,20 @@ while True:
             pre_roll.append(frame)
     else:
         speech_frames.append(frame)
-        if rms < 95:
+        if rms < 34:
             silent_count += 1
         else:
             silent_count = 0
 
-        if silent_count >= 3 or len(speech_frames) >= 32:
+        if silent_count >= 3 or len(speech_frames) >= 30:
             pcm_data = b"".join(speech_frames)
             speech_frames.clear()
             pre_roll.clear()
             silent_count = 0
             if not os.path.exists(LOCK_FILE):
                 try:
-                    audio_obj = sr.AudioData(pcm_data, 16000, 2)
+                    boosted = audioop.mul(pcm_data, 2, 2.5)
+                    audio_obj = sr.AudioData(boosted, 16000, 2)
                     txt = r.recognize_google(audio_obj, language="tr-TR")
                     if txt and not os.path.exists(LOCK_FILE):
                         print("JARVIS_HEARD:" + txt.strip(), flush=True)

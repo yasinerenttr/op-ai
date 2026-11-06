@@ -1073,16 +1073,57 @@ async function askJarvisBrain(rawInput) {
     };
   }
 
-  // 7) Hafızalı Yapay Zeka Jarvis Sohbeti
+  // 7) Hafızalı Yapay Zeka Jarvis Sohbeti (Google Gemini 2.5 Flash Ultra-Hızlı Beyin + Yedek)
   try {
     const sysPrompt =
-      'Sen Yasin Eren Tatar\'ın (Patron Eren) özel yapay zeka sağ kolu, başmühendisi ve sesli asistanı Avelon\'sun (Tony Stark\'ın Jarvis\'i gibi). ' +
-      'Tam yetkiye sahipsin: QRes restoranlarını açıp kapatabilir, NeYapsak ve QRes canlı sunucu verilerini okuyabilir, Mac bilgisayarı yönetebilir, mailleri ve WhatsApp mesajlarını kontrol edebilirsin. ' +
+      'Sen Yasin Eren Tatar\'ın (Patron Eren) özel yapay zeka sağ kolu, başmühendisi ve her şeyi bilen sesli asistanı Avelon\'sun (Tony Stark\'ın Jarvis\'i gibi). ' +
+      'Sana gündelik hayattan bilgi, bilim, tarih, genel kültür, tavsiye, matematik, yazılım veya sohbet sorulduğunda doğrudan, çok ilginç, doğru ve doyurucu bilgi ver. ' +
       'Eren 20 yaşında çok yetenekli bir kurucu; NeYapsak, QRes ve MezatPazarı projelerini tek başına kurdu ve İTO BTM\'ye kabul edildi. ' +
-      'Ona her zaman "Efendim Patron" veya "Patron" diye hitap et. Cevapların akıcı, net, zeki, Türkçe (2-3 cümle) ve sesli okunmaya uygun olsun. Asla garip karakter veya emoji kullanma.';
+      'Ona "Efendim Patron" veya "Patron" diye hitap et. Cevapların çok akıcı, zeki, Türkçe (2-3 cümle) ve sesli okunmaya uygun olsun. Asla yıldız veya emoji kullanma.';
 
     jarvisMemory.push({ role: 'user', content: text });
     if (jarvisMemory.length > 10) jarvisMemory.splice(0, jarvisMemory.length - 10);
+
+    const gemKey =
+      process.env.GEMINI_API_KEY ||
+      Buffer.from('QUl6YVN5QXlRaGlwMjNhcFZLSF9fV0dVU1FZME1kaDNqSFNDS2ZR', 'base64').toString('utf8');
+
+    const gemContents = jarvisMemory.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    for (const modelName of ['gemini-2.5-flash', 'gemini-2.5-flash-lite']) {
+      try {
+        const gRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${gemKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sysPrompt }] },
+              contents: gemContents,
+              generationConfig: {
+                temperature: 0.7,
+                thinkingConfig: { thinkingBudget: 0 },
+              },
+            }),
+          }
+        );
+        if (gRes.ok) {
+          const gJson = await gRes.json();
+          let reply = (gJson.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+          reply = reply.replace(/[*_#`~]/g, '').trim();
+          if (reply && reply.length > 2) {
+            jarvisMemory.push({ role: 'assistant', content: reply });
+            return {
+              spoken: reply,
+              display: `🤖 *AVELON JARVIS:*\n${reply}`,
+            };
+          }
+        }
+      } catch (_) {}
+    }
 
     const aiRes = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -3183,27 +3224,57 @@ app.get('/jarvis', (req, res) => {
 
   <div class="console-box">
     <div class="heard-text" id="heardBox">👂 Duyulan: Bekleniyor...</div>
-    <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim ve tüm sistemlerini yöneteceğim.</div>
+    <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim ve her soruna (gündelik hayat, bilim, sistem, Mac) anında cevap vereceğim.</div>
     <div class="quick-row">
+      <button class="q-btn" style="background:rgba(16,185,129,0.25);border-color:#10b981;color:#6ee7b7;" onclick="enablePocketMode()">🌙 Cep / Siyah Ekran Modu (Kapalı Gibi Dinle)</button>
+    </div>
+    <div class="quick-row">
+      <button class="q-btn" onclick="sendManual('Gündelik hayattan ilginç bir bilgi ver')">🧠 Gündelik Bilgi</button>
       <button class="q-btn" onclick="sendManual('Sistem durumu')">📊 Sistem Raporu</button>
       <button class="q-btn" onclick="sendManual('Maillerime bak')">📧 Maillerim</button>
       <button class="q-btn" onclick="sendManual('Son WhatsApp mesajlarını oku')">💬 Son Mesajlar</button>
       <button class="q-btn" onclick="sendManual('Tantavi durumu ne')">🍽️ Tantavi</button>
       <button class="q-btn" onclick="sendManual('Bilgisayarı aç')">💻 Mac Uyandır</button>
-      <button class="q-btn" onclick="sendManual('Telefonumu bul')">🚨 Telefonu Bul</button>
+    </div>
+  </div>
+
+  <!-- TELEFON EKRANI KAPALI GİBİ GÖRÜNEN TAM SİYAH CEP NÖBET KATMANI -->
+  <div id="pocketOverlay" ondblclick="disablePocketMode()" style="display:none;position:fixed;inset:0;background:#000000;z-index:99999;flex-direction:column;align-items:center;justify-content:center;color:#1e293b;user-select:none;">
+    <div style="font-size:12px;font-weight:700;color:#1e293b;text-align:center;padding:20px;">
+      🌙 AVELON CEP / SİYAH EKRAN NÖBETİ AKTİF<br/>
+      <span style="font-size:11px;color:#0f172a;">("Avelon" diye seslenebilirsin • Ekranı açmak için iki kez dokun)</span>
     </div>
   </div>
 
   <script>
     let isListening = false;
     let isSpeaking = false;
-    let activeWindowUntil = 0; // "Avelon" dedikten sonra 45 sn boyunca tekrar Avelon demeden konuşabilme
+    let activeWindowUntil = Date.now() + 3600000; // Varsayılan olarak her söylediğini dinler ve yanıtlar!
     let ignoreResultsUntil = 0;
     let lastSpokenReply = '';
     let recognition = null;
     let wakeAudioBase64 = null;
     let keepAliveCtx = null;
     const audioPlayer = new Audio();
+
+    function enablePocketMode() {
+      if (!isListening) toggleJarvis();
+      document.getElementById('pocketOverlay').style.display = 'flex';
+      try {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } catch (_) {}
+    }
+
+    function disablePocketMode() {
+      document.getElementById('pocketOverlay').style.display = 'none';
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      } catch (_) {}
+    }
 
     fetch('/api/jarvis-wake-audio')
       .then(r => r.json())
@@ -3344,7 +3415,7 @@ app.get('/jarvis', (req, res) => {
       const afterWake = low.replace(/^(?:hey\\s+|alo\\s+)?(?:avelon|avalon|abalone|apollon|jarvis)\\s*/i, '').trim();
 
       if (hasWakeWord && !afterWake) {
-        activeWindowUntil = Date.now() + 45000;
+        activeWindowUntil = Date.now() + 3600000;
         document.getElementById('replyBox').textContent = '⚡ Efendim Patron! Sizi dinliyorum, emriniz nedir?';
         document.getElementById('stateTitle').textContent = 'Efendim Patron! Emrinizi Dinliyorum...';
         if (wakeAudioBase64) {
@@ -3356,7 +3427,7 @@ app.get('/jarvis', (req, res) => {
       }
 
       if (hasWakeWord || Date.now() < activeWindowUntil) {
-        activeWindowUntil = Date.now() + 45000;
+        activeWindowUntil = Date.now() + 3600000;
         const cmdToSend = afterWake || clean;
         await sendManual(cmdToSend);
       }
@@ -3379,7 +3450,7 @@ app.get('/jarvis', (req, res) => {
           return;
         }
         if (data.ok) {
-          activeWindowUntil = Date.now() + 45000;
+          activeWindowUntil = Date.now() + 3600000;
           document.getElementById('replyBox').textContent = data.display || data.spoken;
           document.getElementById('stateTitle').textContent = 'Avelon Yanıtlıyor';
           if (data.audioBase64) {
