@@ -156,6 +156,74 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     );
     return true;
   }
+
+  // 3.1) Pil / Şarj Durumu, Ekran Görüntüsü, Uygulama & Panel Açma (TAM YETKİ)
+  if (low.includes('şarj') || low.includes('sarj') || low.includes('pil ')) {
+    let battPct = 'bilinmiyor';
+    try {
+      const battRaw = execSync('pmset -g batt', { encoding: 'utf-8' });
+      const m = battRaw.match(/(\d+)%/);
+      if (m) battPct = `%${m[1]}`;
+    } catch (_) {}
+    await completeTask(
+      task.id,
+      `🔋 *MAC PİL DURUMU:* *${battPct}*`,
+      `Efendim Patron, Mac bilgisayarınızın şarj seviyesi şu an ${battPct}.`
+    );
+    return true;
+  }
+
+  if (low.includes('ekran görüntüsü') || low.includes('screenshot')) {
+    const shotPath = '/Users/yasineren/Desktop/Avelon_Ekran_Goruntusu.png';
+    try {
+      execSync(`/usr/sbin/screencapture -x "${shotPath}"`);
+    } catch (_) {}
+    await completeTask(
+      task.id,
+      `📸 *MAC EKRAN GÖRÜNTÜSÜ ALINDI PATRON!* Masaüstüne \`Avelon_Ekran_Goruntusu.png\` olarak kaydedildi.`,
+      `Emredersiniz Patron, Mac bilgisayarınızın ekran görüntüsünü alıp masaüstünüze kaydettim.`
+    );
+    return true;
+  }
+
+  if (low.includes('btm panel') || low.includes('btm aç')) {
+    exec('open -a "Google Chrome 2" "https://panel.btm.istanbul/panel/girisim/girisim-bilgileri" 2>/dev/null || open "https://panel.btm.istanbul/panel/girisim/girisim-bilgileri"');
+    await completeTask(task.id, `🏛️ *İTO BTM Paneli Mac'te Açıldı!*`, `Emredersiniz Patron, İTO BTM girişim panelinizi ekranda açtım.`);
+    return true;
+  }
+
+  if (low.includes('app store') || low.includes('testflight')) {
+    exec('open -a "Google Chrome 2" "https://appstoreconnect.apple.com/apps" 2>/dev/null || open "https://appstoreconnect.apple.com/apps"');
+    await completeTask(task.id, `🍎 *App Store Connect Mac'te Açıldı!*`, `Emredersiniz Patron, Apple App Store Connect panelini ekranda açtım.`);
+    return true;
+  }
+
+  if (low.includes('google\'da') || low.includes('googleda')) {
+    const q = raw.replace(/google(?:'da|da)?|ara|aç/gi, '').trim();
+    const gUrl = `https://www.google.com/search?q=${encodeURIComponent(q || raw)}`;
+    exec(`open -a "Google Chrome 2" "${gUrl}" 2>/dev/null || open "${gUrl}"`);
+    await completeTask(task.id, `🔍 *Google Araması Açıldı:* "${q}"`, `Emredersiniz Patron, Google üzerinde ${q} aramasını açtım.`);
+    return true;
+  }
+
+  const appMap = [
+    { key: 'chrome', app: 'Google Chrome 2', label: 'Google Chrome' },
+    { key: 'spotify', app: 'Spotify', label: 'Spotify' },
+    { key: 'xcode', app: 'Xcode', label: 'Xcode' },
+    { key: 'terminal', app: 'Terminal', label: 'Terminal' },
+    { key: 'finder', app: 'Finder', label: 'Finder' },
+  ];
+  for (const item of appMap) {
+    if (low.includes(item.key) && (low.includes('aç') || low.includes('ac') || low.includes('başlat'))) {
+      exec(`open -a "${item.app}"`);
+      await completeTask(
+        task.id,
+        `🚀 *${item.label} Mac'te Açıldı Patron!*`,
+        `Emredersiniz Patron, ${item.label} uygulamasını bilgisayarınızda açtım.`
+      );
+      return true;
+    }
+  }
   if (low === '.ses' || low.startsWith('.ses ')) {
     await completeTask(
       task.id,
@@ -424,3 +492,271 @@ async function poll() {
 
 setInterval(poll, 4000);
 poll();
+
+// ============================================================================
+// 🎙️ 7/24 WEB KAPALIYKEN ÇALIŞAN YEREL MAC SESLİ JARVİS (SIFIR YANKI & TAM YETKİ)
+// ============================================================================
+const { spawn } = require('child_process');
+const LOCK_FILE = '/tmp/jarvis_speaking.lock';
+const WAKE_MP3_PATH = '/tmp/jarvis_wake.mp3';
+let isMacSpeaking = false;
+let macActiveWindowUntil = 0;
+let lastMacSpoken = '';
+
+try {
+  if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
+} catch (_) {}
+
+async function ensureWakeMp3() {
+  if (fs.existsSync(WAKE_MP3_PATH) && fs.statSync(WAKE_MP3_PATH).size > 1000) return;
+  try {
+    const { MsEdgeTTS, OUTPUT_FORMAT } = require('./node_modules/msedge-tts');
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata('tr-TR-AhmetNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream('Efendim Patron, sizi dinliyorum!');
+    const chunks = [];
+    await new Promise((resolve) => {
+      audioStream.on('data', (c) => chunks.push(c));
+      audioStream.on('end', resolve);
+      audioStream.on('error', resolve);
+    });
+    if (chunks.length > 0) {
+      fs.writeFileSync(WAKE_MP3_PATH, Buffer.concat(chunks));
+    }
+    try { tts.close(); } catch (_) {}
+  } catch (_) {}
+}
+
+async function playMp3OnMacWithoutEcho(mp3Path, spokenTextForFilter = '') {
+  if (!mp3Path || !fs.existsSync(mp3Path)) return;
+  isMacSpeaking = true;
+  if (spokenTextForFilter) lastMacSpoken = spokenTextForFilter;
+  try {
+    fs.writeFileSync(LOCK_FILE, String(Date.now()));
+    execSync(`/usr/bin/afplay "${mp3Path}"`);
+  } catch (_) {
+  } finally {
+    // Hoparlör sesi bittikten sonra odadaki yankının sönmesi için 800ms bekle
+    await new Promise((r) => setTimeout(r, 800));
+    try {
+      if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
+    } catch (_) {}
+    isMacSpeaking = false;
+  }
+}
+
+async function speakTextOnMac(spokenText) {
+  if (!spokenText) return;
+  const tmpMp3 = `/tmp/jarvis_reply_${Date.now()}.mp3`;
+  try {
+    const { MsEdgeTTS, OUTPUT_FORMAT } = require('./node_modules/msedge-tts');
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata('tr-TR-AhmetNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(spokenText);
+    const chunks = [];
+    await new Promise((resolve) => {
+      audioStream.on('data', (c) => chunks.push(c));
+      audioStream.on('end', resolve);
+      audioStream.on('error', resolve);
+    });
+    try { tts.close(); } catch (_) {}
+    if (chunks.length > 0) {
+      fs.writeFileSync(tmpMp3, Buffer.concat(chunks));
+      await playMp3OnMacWithoutEcho(tmpMp3, spokenText);
+    }
+  } catch (_) {
+  } finally {
+    try {
+      if (fs.existsSync(tmpMp3)) fs.unlinkSync(tmpMp3);
+    } catch (_) {}
+  }
+}
+
+function isEchoPhrase(phrase) {
+  const low = String(phrase || '').toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+  if (!low) return true;
+  if (
+    low.includes('efendim patron') ||
+    low.includes('sizi dinliyorum') ||
+    low.includes('emriniz nedir') ||
+    low.includes('emredersiniz patron') ||
+    low.includes('tam yetkiyle') ||
+    low.includes('tatar endüstri') ||
+    low.includes('eren bey')
+  ) {
+    return true;
+  }
+  if (lastMacSpoken) {
+    const sLow = lastMacSpoken.toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+    if (sLow && (sLow.includes(low) || low.includes(sLow.slice(0, 18)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function handleMacBackgroundSpoken(rawPhrase) {
+  if (isMacSpeaking || fs.existsSync(LOCK_FILE)) return;
+  const clean = String(rawPhrase || '').trim();
+  if (!clean || isEchoPhrase(clean)) return;
+
+  const low = clean.toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+  if (low === 'beklemeye geç' || low === 'tamam avelon' || low === 'teşekkürler avelon') {
+    macActiveWindowUntil = 0;
+    return;
+  }
+
+  const hasWakeWord =
+    low.includes('avelon') ||
+    low.includes('avalon') ||
+    low.includes('abalone') ||
+    low.includes('apollon') ||
+    low.includes('jarvis');
+
+  const afterWake = low.replace(/^(?:hey\s+|alo\s+)?(?:avelon|avalon|abalone|apollon|jarvis)\s*/i, '').trim();
+
+  // Sadece "Avelon" dediyse -> Anında Mac hoparlöründen "Efendim Patron, sizi dinliyorum!"
+  if (hasWakeWord && !afterWake) {
+    macActiveWindowUntil = Date.now() + 45000;
+    await ensureWakeMp3();
+    await playMp3OnMacWithoutEcho(WAKE_MP3_PATH, 'Efendim Patron sizi dinliyorum');
+    return;
+  }
+
+  // "Avelon <komut>" dediyse veya aktif 45 sn penceresindeyse:
+  if (hasWakeWord || Date.now() < macActiveWindowUntil) {
+    macActiveWindowUntil = Date.now() + 45000;
+    const cmdText = afterWake || clean;
+
+    // 1) Önce yerel Mac tam yetki komutlarına bak (ses, ekran, youtube, uygulama açma, pil, screenshot, qres)
+    let localSpoken = '';
+    const fakeTask = {
+      id: 'LOCAL-MAC-' + Date.now(),
+      prompt: cmdText,
+    };
+    const origComplete = completeTask;
+    // Yerel komutu çalıştırırken sesli yanıtı da Mac hoparlöründen oku
+    try {
+      const handledLocal = await handleInstantMacCommand(
+        {
+          id: fakeTask.id,
+          prompt: cmdText,
+        },
+        false
+      );
+      if (handledLocal) {
+        // handleInstantMacCommand sunucuya completeTask gönderdi, ayrıca Mac'te sesli söyleyelim:
+        await speakTextOnMac(`Emredersiniz Patron, ${cmdText} işlemini hemen gerçekleştirdim.`);
+        return;
+      }
+    } catch (_) {}
+
+    // 2) Canlı Jarvis Beynine (QRes Aç/Kapat, Mail, WhatsApp, Hafızalı AI) sor ve Mac hoparlöründen konuş
+    try {
+      const res = await fetch(`${BOT_URL}/api/jarvis-command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cmdText, alsoSendWhatsApp: true }),
+      });
+      const data = await res.json();
+      if (data && data.ok && !data.ignore) {
+        if (data.audioBase64) {
+          const tmpReply = `/tmp/jarvis_srv_${Date.now()}.mp3`;
+          fs.writeFileSync(tmpReply, Buffer.from(data.audioBase64, 'base64'));
+          await playMp3OnMacWithoutEcho(tmpReply, data.spoken);
+          try { fs.unlinkSync(tmpReply); } catch (_) {}
+        } else if (data.spoken) {
+          await speakTextOnMac(data.spoken);
+        }
+      }
+    } catch (e) {
+      await speakTextOnMac('Efendim Patron, sizi dinliyorum ve emrinizdeyim.');
+    }
+  }
+}
+
+function startMacBackgroundVoiceJarvis() {
+  ensureWakeMp3().catch(() => {});
+  const ffPath = fs.existsSync(FFMPEG_BIN) ? FFMPEG_BIN : 'ffmpeg';
+
+  const pyCode = `
+import subprocess, sys, os, audioop, collections
+import speech_recognition as sr
+
+LOCK_FILE = "/tmp/jarvis_speaking.lock"
+FFMPEG = ${JSON.stringify(ffPath)}
+
+cmd = [FFMPEG, "-loglevel", "quiet", "-f", "avfoundation", "-i", ":0", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"]
+proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=6400)
+
+r = sr.Recognizer()
+FRAME_BYTES = 6400 # 0.2 sn (16000 Hz * 2 byte * 0.2)
+pre_roll = collections.deque(maxlen=3)
+speech_frames = []
+silent_count = 0
+cooldown_frames = 0
+
+while True:
+    frame = proc.stdout.read(FRAME_BYTES)
+    if not frame or len(frame) < FRAME_BYTES:
+        break
+
+    if os.path.exists(LOCK_FILE):
+        pre_roll.clear()
+        speech_frames.clear()
+        silent_count = 0
+        cooldown_frames = 4
+        continue
+
+    if cooldown_frames > 0:
+        cooldown_frames -= 1
+        pre_roll.clear()
+        speech_frames.clear()
+        continue
+
+    rms = audioop.rms(frame, 2)
+    if len(speech_frames) == 0:
+        if rms > 115:
+            speech_frames.extend(pre_roll)
+            speech_frames.append(frame)
+            silent_count = 0
+        else:
+            pre_roll.append(frame)
+    else:
+        speech_frames.append(frame)
+        if rms < 95:
+            silent_count += 1
+        else:
+            silent_count = 0
+
+        if silent_count >= 3 or len(speech_frames) >= 32:
+            pcm_data = b"".join(speech_frames)
+            speech_frames.clear()
+            pre_roll.clear()
+            silent_count = 0
+            if not os.path.exists(LOCK_FILE):
+                try:
+                    audio_obj = sr.AudioData(pcm_data, 16000, 2)
+                    txt = r.recognize_google(audio_obj, language="tr-TR")
+                    if txt and not os.path.exists(LOCK_FILE):
+                        print("JARVIS_HEARD:" + txt.strip(), flush=True)
+                except Exception:
+                    pass
+`;
+
+  const pyProc = spawn('python3', ['-u', '-c', pyCode], { stdio: ['ignore', 'pipe', 'ignore'] });
+  pyProc.stdout.on('data', (chunk) => {
+    const lines = String(chunk).split('\n');
+    for (const line of lines) {
+      if (line.startsWith('JARVIS_HEARD:')) {
+        const phrase = line.replace('JARVIS_HEARD:', '').trim();
+        handleMacBackgroundSpoken(phrase).catch(() => {});
+      }
+    }
+  });
+  pyProc.on('exit', () => {
+    setTimeout(startMacBackgroundVoiceJarvis, 2000);
+  });
+}
+
+startMacBackgroundVoiceJarvis();
