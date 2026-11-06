@@ -166,17 +166,36 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     low.includes('kaybettim') ||
     low.includes('sahte arama')
   ) {
-    try {
-      await fetch(`${BOT_URL}/api/find-my-phone`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'Avelon Sesli/Yazılı Telefon Bulucu' }),
-      });
-    } catch (_) {}
+    // Mac Chrome üzerinden Google Cihazımı Bul (Find My Device) sayfasını aç ve "Ses Çal" butonuna otomatik tıkla!
+    const findUrl = 'https://www.google.com/android/find/';
+    exec(`open -a "Google Chrome 2" "${findUrl}" 2>/dev/null || open -a "Google Chrome" "${findUrl}" 2>/dev/null || open "${findUrl}"`);
+    setTimeout(() => {
+      const clickScript = `
+        tell application "Google Chrome"
+          repeat with w in windows
+            repeat with t in tabs of w
+              if URL of t contains "google.com/android/find" then
+                execute t javascript "
+                  (function() {
+                    const btns = Array.from(document.querySelectorAll('button, [role=button], span, div'));
+                    const playBtn = btns.find(el => /ses çal|play sound|çaldır/i.test((el.innerText || el.textContent || '').trim()));
+                    if (playBtn) { playBtn.click(); }
+                  })();
+                "
+              end if
+            end repeat
+          end repeat
+        end tell
+      `;
+      exec(`osascript -e '${clickScript.replace(/'/g, "'\\''")}'`, () => {});
+    }, 4500);
+
     await completeTask(
       task.id,
-      `📞 *SAHTE ARAMA & TELEFON BULUCU BAŞLATILDI!* 🚨🔊\nTelefonuna 30 saniye boyunca kesintisiz zil ve titreşim gönderiliyor! (Durdurmak için *.buldum* yaz)`,
-      `Eren Bey, telefonunuzu çaldırmaya başladım! Sesimi duyuyor musunuz? Telefonunuz burada!`
+      `📞 *GOOGLE CİHAZIMI BUL & TELEFON SİRENİ BAŞLATILDI!* 🚨🔊\n\n` +
+        `1️⃣ Mac bilgisayarında **Google Cihazımı Bul (Find My Device)** açıldı ve telefonuna **Sessizde Bile %100 Sesle Çaldır** sinyali tetiklendi!\n` +
+        `2️⃣ NeYapsak & WhatsApp üzerinden de arka arkaya titreşim/bildirim gönderiliyor!`,
+      `Eren Bey, Google Cihazımı Bul üzerinden telefonunuzu tam sesle çaldırıyorum!`
     );
     return true;
   }

@@ -400,6 +400,16 @@ async function startFindMyPhoneSiren(sourceLabel = 'WhatsApp Komutu') {
   phoneFinderStartedAt = Date.now();
   phoneFinderWave = 1;
 
+  // 0) Mac açıksa Google Cihazımı Bul (google.com/android/find) üzerinden telefonu SESSİZDE BİLE %100 SESLE çaldırmak için görev ekle!
+  stateData.gemiTasks = stateData.gemiTasks || [];
+  stateData.gemiTasks.push({
+    id: 'GEMI-PHONE-' + Date.now(),
+    prompt: '.telefon',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  });
+  saveData();
+
   // 1) İlk anda WhatsApp Call Offer paketi + Sesli Siren + Push gönder
   triggerWhatsAppFakeCallPacket('905525222988@s.whatsapp.net').catch(() => {});
   sendDirectPhonePush(
