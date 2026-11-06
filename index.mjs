@@ -464,10 +464,11 @@ async function startFindMyPhoneSiren(sourceLabel = 'WhatsApp Komutu') {
 
 // 📧 7/24 ÖNEMLİ E-POSTA (GMAIL / IMAP) TAKİP VE WHATSAPP BİLDİRİM SİSTEMİ
 const DEFAULT_MAIL_ACCOUNTS = [
+  { email: 'tataryasineren@gmail.com', pass: 'ehtbpberbouurjtx', label: 'Yasin Eren Kişisel Gmail' },
   { email: 'neyyapsak@gmail.com', pass: 'vvmvxohmokoklqet', label: 'NeYapsak Resmi Mail' },
   { email: 'qrestaurantdestek@gmail.com', pass: 'hewppahaskfxessj', label: 'QRes Destek Mail' },
 ];
-stateData.mailAccounts = stateData.mailAccounts || DEFAULT_MAIL_ACCOUNTS;
+stateData.mailAccounts = DEFAULT_MAIL_ACCOUNTS;
 stateData.lastSeenMailUid = stateData.lastSeenMailUid || {};
 
 function decodeMimeWords(str = '') {
@@ -475,13 +476,28 @@ function decodeMimeWords(str = '') {
   return String(str)
     .replace(/=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g, (_, charset, enc, text) => {
       try {
+        let buf;
         if (enc.toUpperCase() === 'B') {
-          return Buffer.from(text, 'base64').toString('utf8');
+          buf = Buffer.from(text, 'base64');
+        } else {
+          const bytes = [];
+          const qText = text.replace(/_/g, ' ');
+          for (let i = 0; i < qText.length; i++) {
+            if (qText[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(qText.slice(i + 1, i + 3))) {
+              bytes.push(parseInt(qText.slice(i + 1, i + 3), 16));
+              i += 2;
+            } else {
+              bytes.push(qText.charCodeAt(i));
+            }
+          }
+          buf = Buffer.from(bytes);
         }
-        const qText = text.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (__, hex) =>
-          String.fromCharCode(parseInt(hex, 16))
-        );
-        return Buffer.from(qText, 'binary').toString('utf8');
+        const normCharset = String(charset || 'utf-8').toLowerCase();
+        const decoderLabel =
+          normCharset.includes('8859-9') || normCharset.includes('1254')
+            ? 'windows-1254'
+            : 'utf-8';
+        return new TextDecoder(decoderLabel).decode(buf);
       } catch (e) {
         return text;
       }
@@ -3046,6 +3062,9 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`☁️ Render 7/24 Self-Ping Aktif: ${externalUrl}/health`);
     setInterval(() => {
       fetch(`${externalUrl}/health`).catch(() => {});
-    }, 4 * 60 * 1000);
+    }, 4 * 60 * 1000); 
+
   }
+
 });
+                                                          
