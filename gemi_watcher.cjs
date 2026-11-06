@@ -157,6 +157,30 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
+  // 3.2) TELEFON BULUCU & SAHTE ARAMA (.telefon, .telfon, telefonumu bul, telefonu çaldır)
+  if (
+    low.includes('telefon') ||
+    low.includes('telfon') ||
+    low.includes('çaldır') ||
+    low.includes('caldir') ||
+    low.includes('kaybettim') ||
+    low.includes('sahte arama')
+  ) {
+    try {
+      await fetch(`${BOT_URL}/api/find-my-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'Avelon Sesli/Yazılı Telefon Bulucu' }),
+      });
+    } catch (_) {}
+    await completeTask(
+      task.id,
+      `📞 *SAHTE ARAMA & TELEFON BULUCU BAŞLATILDI!* 🚨🔊\nTelefonuna 30 saniye boyunca kesintisiz zil ve titreşim gönderiliyor! (Durdurmak için *.buldum* yaz)`,
+      `Eren Bey, telefonunuzu çaldırmaya başladım! Sesimi duyuyor musunuz? Telefonunuz burada!`
+    );
+    return true;
+  }
+
   // 3.5) AVELON — TATAR ENDÜSTRİ SÜPER ADMİN KOMUTU (Sesli veya yazılı "admin", "tantavi", "qres")
   if (
     low.includes('admin') ||

@@ -10,6 +10,8 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
+import tls from 'tls';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { exec, execSync } from 'child_process';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
@@ -245,17 +247,452 @@ function normalizeTRPhone(raw = '') {
   return clean;
 }
 
-// Patron Eren'in kendi "Siz" (905525222988) sohbetine anlık sekreter raporu gönderen fonksiyon
-async function notifyOwnerSelfChat(reportText) {
+// Patron Eren'in telefonuna doğrudan NeYapsak / Expo Push üzerinden sesli bildirim gönderen köprü
+const EREN_DEFAULT_PUSH_TOKENS = [
+  'ExponentPushToken[RIZp5RGvse8KHjaRYgBJ7S]', // ttryu (Güncel Ana Telefon)
+  'ExponentPushToken[6pGHA_K-3RBerF4ObJKmdg]', // ttryus
+];
+let cachedErenPushTokens = [...EREN_DEFAULT_PUSH_TOKENS];
+let lastTokenRefreshAt = 0;
+
+async function refreshErenPushTokens() {
+  if (Date.now() - lastTokenRefreshAt < 5 * 60 * 1000) return cachedErenPushTokens;
+  lastTokenRefreshAt = Date.now();
   try {
+    const res = await fetch('https://jellyfish-app-oydmg.ondigitalocean.app/api/admin/users', {
+      headers: { 'x-admin-key': 'neyapsak_admin_secret_key_2026_secure' },
+    });
+    const data = await res.json();
+    const users = Array.isArray(data) ? data : data.users || [];
+    const tokens = new Set(EREN_DEFAULT_PUSH_TOKENS);
+    for (const u of users) {
+      if (
+        u.pushToken &&
+        (u.username === 'ttryu' ||
+          u.username === 'ttryus' ||
+          u.email === 'tataryasineren@gmail.com' ||
+          u.email === 'tatarerenyasin@gmail.com')
+      ) {
+        tokens.add(u.pushToken);
+      }
+    }
+    cachedErenPushTokens = [...tokens];
+  } catch (_) {}
+  return cachedErenPushTokens;
+}
+
+async function sendDirectPhonePush(title, body, extraData = {}) {
+  try {
+    const tokens = await refreshErenPushTokens();
+    const cleanBody = String(body || '')
+      .replace(/\*/g, '')
+      .replace(/_/g, '')
+      .slice(0, 220);
+    const messages = tokens.map((to) => ({
+      to,
+      sound: 'default',
+      title: title || '🤖 Avelon Asistan',
+      body: cleanBody || 'Yeni bildirim!',
+      data: { source: 'avelon', ...extraData },
+      channelId: 'default',
+      priority: 'high',
+      interruptionLevel: 'time-sensitive',
+      badge: 1,
+      _displayInForeground: true,
+    }));
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messages),
+    });
+  } catch (err) {
+    console.error('Direct phone push hatası:', err.message);
+  }
+}
+
+// Patron Eren'in kendi "Siz" (905525222988) sohbetine anlık sekreter raporu + Telefon Push Bildirimi gönderen fonksiyon
+async function notifyOwnerSelfChat(reportText, pushTitle = '🤖 Avelon Asistan Bildirimi') {
+  try {
+    // 1) Her zaman telefona gerçek sesli Push Bildirimi gönder (WhatsApp "Siz" sohbeti sessiz kaldığı için)
+    const firstLine =
+      String(reportText || '')
+        .split('\n')
+        .map((l) => l.replace(/\*/g, '').trim())
+        .find((l) => l.length > 0) || pushTitle;
+    const restLines = String(reportText || '')
+      .split('\n')
+      .slice(1)
+      .join(' ')
+      .replace(/\*/g, '')
+      .trim();
+    sendDirectPhonePush(firstLine.slice(0, 65), restLines || firstLine).catch(() => {});
+
+    // 2) WhatsApp "Siz" sohbetine mesajı yaz
     if (!sock || connectionStatus !== 'connected') return;
     const selfJid = '905525222988@s.whatsapp.net';
     const sent = await sock.sendMessage(selfJid, { text: reportText });
     if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
+    // Bildirimlerin telefona düşmesini engellememek için botu 'unavailable' işaretle
+    sock.sendPresenceUpdate('unavailable').catch(() => {});
   } catch (err) {
     console.error('Owner self-chat bildirim hatası:', err.message);
   }
 }
+
+// 📞 SAHTE ARAMA & TELEFON BULUCU SİREN SİSTEMİ (.telefon / .telfon)
+let phoneFinderInterval = null;
+let phoneFinderWave = 0;
+let phoneFinderStartedAt = 0;
+
+function stopFindMyPhoneSiren(notify = true) {
+  if (phoneFinderInterval) {
+    clearInterval(phoneFinderInterval);
+    phoneFinderInterval = null;
+  }
+  phoneFinderWave = 0;
+  if (notify && sock && connectionStatus === 'connected') {
+    sock
+      .sendMessage('905525222988@s.whatsapp.net', {
+        text: '✅ *TELEFON BULUNDU!* 🔕\nSahte arama ve zil alarmı durduruldu cano.',
+      })
+      .then((s) => {
+        if (s?.key?.id) botSentMsgIds.add(s.key.id);
+      })
+      .catch(() => {});
+  }
+}
+
+async function triggerWhatsAppFakeCallPacket(targetJid = '905525222988@s.whatsapp.net') {
+  if (!sock || connectionStatus !== 'connected') return;
+  try {
+    const callId = crypto.randomBytes(16).toString('hex').toUpperCase();
+    await sock.query({
+      tag: 'call',
+      attrs: {
+        to: targetJid,
+        id: sock.generateMessageTag(),
+      },
+      content: [
+        {
+          tag: 'offer',
+          attrs: {
+            'call-id': callId,
+            'call-creator': sock.user?.id || targetJid,
+          },
+          content: [
+            { tag: 'audio', attrs: { enc: 'opus', rate: '16000' } },
+            { tag: 'net', attrs: { medium: '3' } },
+            { tag: 'capability', attrs: { ver: '1' }, content: Buffer.from([1, 4, 255, 131, 207, 4]) },
+            { tag: 'encopt', attrs: { keygen: '2' } },
+          ],
+        },
+      ],
+    });
+  } catch (_) {}
+}
+
+async function startFindMyPhoneSiren(sourceLabel = 'WhatsApp Komutu') {
+  stopFindMyPhoneSiren(false);
+  phoneFinderStartedAt = Date.now();
+  phoneFinderWave = 1;
+
+  // 1) İlk anda WhatsApp Call Offer paketi + Sesli Siren + Push gönder
+  triggerWhatsAppFakeCallPacket('905525222988@s.whatsapp.net').catch(() => {});
+  sendDirectPhonePush(
+    '📞 AVELON ARIYOR... (Gelen Arama #1)',
+    '🔊 ZİL ÇALIYOR! Telefonun Burada Cano! (Durdurmak için .buldum yaz)',
+    { type: 'fake_call', wave: 1 }
+  ).catch(() => {});
+
+  if (sock && connectionStatus === 'connected') {
+    try {
+      const sent = await sock.sendMessage('905525222988@s.whatsapp.net', {
+        text:
+          `📞 *SAHTE ARAMA & TELEFON BULUCU BAŞLATILDI!* 🚨🔊\n\n` +
+          `📍 *Tetikleyen:* ${sourceLabel}\n` +
+          `🔔 Telefonuna **30 saniye boyunca her 2.5 saniyede bir** kesintisiz sesli arama/push zili ve titreşim gönderiliyor!\n\n` +
+          `🛑 *Durdurmak için:* Telefonu bulduğunda *.buldum* yazman yeterli!`,
+      });
+      if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
+    } catch (_) {}
+
+    sendVoiceNote(
+      '905525222988@s.whatsapp.net',
+      'Alo Eren Bey! Telefonunuz çalıyor! Telefonunuz burada, sesimi duyuyor musunuz? Eren Bey telefonunuz burada!'
+    ).catch(() => {});
+  }
+
+  // 2) 12 Dalga (30 Saniye) Kesintisiz Zil & Sahte Arama Döngüsü
+  phoneFinderInterval = setInterval(async () => {
+    phoneFinderWave += 1;
+    if (phoneFinderWave > 12) {
+      stopFindMyPhoneSiren(false);
+      return;
+    }
+    await sendDirectPhonePush(
+      `📞 AVELON ARIYOR... (Çağrı #${phoneFinderWave}/12)`,
+      `🔊🚨 TELEFONUN BURADA CANO! Ses ve Titreşim Sinyali #${phoneFinderWave} (Durdur: .buldum)`,
+      { type: 'fake_call', wave: phoneFinderWave }
+    );
+    if (phoneFinderWave % 3 === 0 && sock && connectionStatus === 'connected') {
+      triggerWhatsAppFakeCallPacket('905525222988@s.whatsapp.net').catch(() => {});
+      sock
+        .sendMessage('905525222988@s.whatsapp.net', {
+          text: `🔊 *ZİL ÇALIYOR (#${phoneFinderWave}/12)* — 📞 *Avelon Sahte Arama Sinyali!* (Durdurmak için *.buldum* yaz)`,
+        })
+        .then((s) => {
+          if (s?.key?.id) botSentMsgIds.add(s.key.id);
+        })
+        .catch(() => {});
+    }
+  }, 2500);
+}
+
+// 📧 7/24 ÖNEMLİ E-POSTA (GMAIL / IMAP) TAKİP VE WHATSAPP BİLDİRİM SİSTEMİ
+const DEFAULT_MAIL_ACCOUNTS = [
+  { email: 'neyyapsak@gmail.com', pass: 'vvmvxohmokoklqet', label: 'NeYapsak Resmi Mail' },
+  { email: 'qrestaurantdestek@gmail.com', pass: 'hewppahaskfxessj', label: 'QRes Destek Mail' },
+];
+stateData.mailAccounts = stateData.mailAccounts || DEFAULT_MAIL_ACCOUNTS;
+stateData.lastSeenMailUid = stateData.lastSeenMailUid || {};
+
+function decodeMimeWords(str = '') {
+  if (!str) return '';
+  return String(str)
+    .replace(/=\?([^?]+)\?([BQbq])\?([^?]*)\?=/g, (_, charset, enc, text) => {
+      try {
+        if (enc.toUpperCase() === 'B') {
+          return Buffer.from(text, 'base64').toString('utf8');
+        }
+        const qText = text.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (__, hex) =>
+          String.fromCharCode(parseInt(hex, 16))
+        );
+        return Buffer.from(qText, 'binary').toString('utf8');
+      } catch (e) {
+        return text;
+      }
+    })
+    .replace(/\r?\n\s+/g, ' ')
+    .trim();
+}
+
+function fetchImapRecentEmails({ email, pass }, count = 5) {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const done = (val) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(val);
+      }
+    };
+
+    const socket = tls.connect(993, 'imap.gmail.com', { servername: 'imap.gmail.com', timeout: 12000 });
+    let bufStr = '';
+    let step = 0;
+
+    const timer = setTimeout(() => {
+      try { socket.destroy(); } catch (_) {}
+      done([]);
+    }, 12000);
+
+    socket.on('error', () => {
+      clearTimeout(timer);
+      done([]);
+    });
+
+    socket.on('data', (chunk) => {
+      const s = chunk.toString('utf8');
+      bufStr += s;
+
+      if (step === 0 && bufStr.includes('* OK')) {
+        step = 1;
+        bufStr = '';
+        socket.write(`A1 LOGIN "${email}" "${pass}"\r\n`);
+      } else if (step === 1 && (bufStr.includes('A1 OK') || bufStr.includes('A1 NO') || bufStr.includes('A1 BAD'))) {
+        if (!bufStr.includes('A1 OK')) {
+          clearTimeout(timer);
+          socket.end();
+          return done([]);
+        }
+        step = 2;
+        bufStr = '';
+        socket.write('A2 SELECT INBOX\r\n');
+      } else if (step === 2 && bufStr.includes('A2 OK')) {
+        step = 3;
+        const m = bufStr.match(/\* (\d+) EXISTS/);
+        const total = m ? parseInt(m[1], 10) : 0;
+        if (total <= 0) {
+          clearTimeout(timer);
+          socket.write('A4 LOGOUT\r\n');
+          socket.end();
+          return done([]);
+        }
+        const start = Math.max(1, total - count + 1);
+        bufStr = '';
+        socket.write(`A3 FETCH ${start}:${total} (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])\r\n`);
+      } else if (step === 3 && (bufStr.includes('A3 OK') || bufStr.includes('A3 NO') || bufStr.includes('A3 BAD'))) {
+        clearTimeout(timer);
+        const rawBlock = bufStr;
+        socket.write('A4 LOGOUT\r\n');
+        socket.end();
+
+        const items = [];
+        const parts = rawBlock.split(/\* \d+ FETCH \(/).slice(1);
+        for (const p of parts) {
+          const uidMatch = p.match(/UID (\d+)/);
+          const fromMatch = p.match(/^From:\s*(.+)$/im);
+          const subjMatch = p.match(/^Subject:\s*(.+)$/im);
+          const dateMatch = p.match(/^Date:\s*(.+)$/im);
+          if (uidMatch) {
+            items.push({
+              uid: parseInt(uidMatch[1], 10),
+              from: decodeMimeWords(fromMatch ? fromMatch[1] : 'Bilinmeyen Gönderen'),
+              subject: decodeMimeWords(subjMatch ? subjMatch[1] : '(Konu Yok)'),
+              date: (dateMatch ? dateMatch[1] : '').trim(),
+            });
+          }
+        }
+        done(items);
+      }
+    });
+  });
+}
+
+function isImportantEmail({ from, subject }) {
+  const combined = `${from} ${subject}`.toLocaleLowerCase('tr-TR');
+  // Önemsiz bülten/reklam filtreleri
+  if (
+    combined.includes('insideapple.apple.com') ||
+    combined.includes('unsubscribe') ||
+    combined.includes('newsletter')
+  ) {
+    return false;
+  }
+  const importantKeywords = [
+    'app store',
+    'testflight',
+    'apple developer',
+    'review',
+    'submission',
+    'guideline',
+    'google play',
+    'tübitak',
+    'tubitak',
+    'teydeb',
+    'btm',
+    'garanti',
+    'bbva',
+    'lonca',
+    'workup',
+    'itü çekirdek',
+    'itu cekirdek',
+    'yatırım',
+    'hibe',
+    'başvuru',
+    'basvuru',
+    'mülakat',
+    'mulakat',
+    'onay',
+    'verify',
+    'verification',
+    'doğrulama',
+    'dogrulama',
+    'security',
+    'güvenlik',
+    'fatura',
+    'invoice',
+    'payment',
+    'ödeme',
+    'suspended',
+    'failed',
+    'critical',
+    'important',
+    'acil',
+    'render',
+    'digitalocean',
+    'mongodb',
+    'firebase',
+    'qres',
+    'neyapsak',
+  ];
+  return importantKeywords.some((kw) => combined.includes(kw));
+}
+
+async function pollAllMailAccounts(forceReportAll = false) {
+  const accounts = stateData.mailAccounts || DEFAULT_MAIL_ACCOUNTS;
+  const summaryLines = [];
+
+  for (const acc of accounts) {
+    try {
+      const emails = await fetchImapRecentEmails(acc, 5);
+      if (!emails.length) continue;
+
+      const maxUid = Math.max(...emails.map((e) => e.uid));
+      const prevUid = stateData.lastSeenMailUid[acc.email];
+
+      if (forceReportAll) {
+        const latestList = emails
+          .slice(-4)
+          .reverse()
+          .map(
+            (e, idx) =>
+              `  ${idx + 1}. *${e.subject}*\n     👤 ${e.from.replace(/<[^>]+>/g, '').trim()}`
+          )
+          .join('\n');
+        summaryLines.push(`📬 *${acc.label || acc.email}:*\n${latestList}`);
+      }
+
+      if (prevUid === undefined) {
+        // İlk çalışmada mevcut son UID'yi kaydet
+        stateData.lastSeenMailUid[acc.email] = maxUid;
+        saveData();
+        continue;
+      }
+
+      const newEmails = emails.filter((e) => e.uid > prevUid);
+      if (newEmails.length > 0) {
+        stateData.lastSeenMailUid[acc.email] = maxUid;
+        saveData();
+
+        for (const mail of newEmails) {
+          const important = isImportantEmail(mail);
+          const badge = important ? '🚨 *ÖNEMLİ E-POSTA GELDİ!*' : '📧 *YENİ E-POSTA GELDİ!*';
+          const cleanSender = mail.from.replace(/<[^>]+>/g, '').trim() || mail.from;
+          const mailReport =
+            `${badge}\n\n` +
+            `📥 *Hesap:* ${acc.email}\n` +
+            `👤 *Gönderen:* ${ mail.from }\n` +
+            `📌 *Konu:* *${mail.subject}*\n` +
+            `🕒 *Tarih:* ${mail.date}`;
+
+          await notifyOwnerSelfChat(mailReport, `📧 Mail: ${mail.subject}`);
+          if (important) {
+            await sendVoiceNote(
+              '905525222988@s.whatsapp.net',
+              `Eren Bey, ${acc.label || acc.email} adresinize ${cleanSender} tarafından önemli bir e-posta geldi. Konusu: ${mail.subject}`
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`Mail kontrol hatası (${acc.email}):`, e.message);
+    }
+  }
+
+  return summaryLines;
+}
+
+// Her 90 saniyede bir mailleri otomatik kontrol et
+setInterval(() => {
+  pollAllMailAccounts(false).catch(() => {});
+}, 90 * 1000);
+setTimeout(() => {
+  pollAllMailAccounts(false).catch(() => {});
+}, 8000);
 
 // Avelon Ses Profilleri (Microsoft Azure Neural HD Stüdyo Sesleri)
 const VOICE_PROFILES = {
@@ -830,6 +1267,19 @@ async function startWhatsApp() {
                     extractedText = '.admin qres muamma';
                   } else if (sLow.includes('2art') || sLow.includes('iki art')) {
                     extractedText = '.admin qres 2arti2';
+                  } else if (
+                    sLow.includes('telefon') ||
+                    sLow.includes('telfon') ||
+                    sLow.includes('çaldır') ||
+                    sLow.includes('caldir') ||
+                    sLow.includes('kaybettim') ||
+                    sLow.includes('sahte arama')
+                  ) {
+                    extractedText = '.telefon';
+                  } else if (sLow.includes('buldum') || sLow.includes('sustur') || sLow.includes('durdur')) {
+                    extractedText = '.buldum';
+                  } else if (sLow.includes('mail') || sLow.includes('eposta') || sLow.includes('e-posta')) {
+                    extractedText = '.mail';
                   } else if (sLow.includes('admin') || sLow.includes('qres') || sLow.includes('qris')) {
                     extractedText = '.admin';
                   } else if (sLow.includes('takvim') || sLow.includes('randevu') || sLow.includes('özet')) {
@@ -914,8 +1364,85 @@ async function startWhatsApp() {
             myText.startsWith('.admin ') ||
             myText.startsWith('.qres') ||
             myText.startsWith('.hatirlat ') ||
-            myText.startsWith('.hatırlat ')
+            myText.startsWith('.hatırlat ') ||
+            myText === '.telefon' ||
+            myText === '.telfon' ||
+            myText === '.telefonubul' ||
+            myText === '.caldir' ||
+            myText === '.çaldır' ||
+            myText === '.buldum' ||
+            myText === '.mail' ||
+            myText.startsWith('.mail ')
           ) {
+            // 0-TELEFON BULUCU & SAHTE ARAMA (.telefon, .telfon, .caldir, .buldum)
+            if (
+              myText === '.telefon' ||
+              myText === '.telfon' ||
+              myText === '.telefonubul' ||
+              myText === '.caldir' ||
+              myText === '.çaldır' ||
+              myText === 'telefonumu bul' ||
+              myText === 'telefonu çaldır'
+            ) {
+              await startFindMyPhoneSiren('WhatsApp (.telefon komutu)');
+              continue;
+            }
+
+            if (myText === '.buldum' || myText === 'buldum') {
+              stopFindMyPhoneSiren(true);
+              continue;
+            }
+
+            // 0-MAIL KONTROL VE HESAP BAĞLAMA (.mail, .mail kontrol, .mail ekle eposta@gmail.com uygulama_sifresi)
+            if (myText === '.mail' || myText.startsWith('.mail ')) {
+              const mailSub = trimmedRaw.replace(/^\.mail\s*/i, '').trim();
+              if (mailSub.toLocaleLowerCase('tr-TR').startsWith('ekle ')) {
+                const parts = mailSub.replace(/^ekle\s+/i, '').trim().split(/\s+/);
+                const newEmail = parts[0];
+                const newPass = parts.slice(1).join('');
+                if (!newEmail || !newPass) {
+                  await notifyOwnerSelfChat(
+                    `⚠️ *Kullanım:* \`.mail ekle eposta@gmail.com uygulama_sifresi\`\n` +
+                    `_(Google Hesabım -> Güvenlik -> Uygulama Şifreleri kısmından aldığın 16 haneli şifreyi yazabilirsin cano.)_`
+                  );
+                  continue;
+                }
+                stateData.mailAccounts = stateData.mailAccounts || DEFAULT_MAIL_ACCOUNTS;
+                const existingIdx = stateData.mailAccounts.findIndex((a) => a.email === newEmail);
+                if (existingIdx >= 0) {
+                  stateData.mailAccounts[existingIdx].pass = newPass;
+                } else {
+                  stateData.mailAccounts.push({ email: newEmail, pass: newPass, label: newEmail });
+                }
+                saveData();
+                await notifyOwnerSelfChat(
+                  `✅ *YENİ E-POSTA HESABI AVELON'A BAĞLANDI!* 📧\n\n` +
+                  `📥 *Hesap:* ${newEmail}\n` +
+                  `🔔 Artık bu adrese gelen tüm önemli mailler (Apple, BTM, Garanti, TÜBİTAK, Banka, Onay vb.) 7/24 anında WhatsApp'ına ve telefon bildirimine düşecek!`
+                );
+                await pollAllMailAccounts(true);
+                continue;
+              }
+
+              await notifyOwnerSelfChat(`⏳ *Avelon bağlı e-posta kutularını kontrol ediyor...* 📧`);
+              const summaries = await pollAllMailAccounts(true);
+              if (summaries.length > 0) {
+                await notifyOwnerSelfChat(
+                  `📧 *AVELON E-POSTA KUTUSU ÖZETİ (SON MAİLLER)* 📬\n\n` +
+                  summaries.join('\n\n') +
+                  `\n\n💡 _7/24 Otomatik Takip Aktif! Yeni önemli mail geldiğinde anında WhatsApp ve Telefon Push bildirimi olarak atılır._\n` +
+                  `➕ _Başka Gmail bağlamak için:_ \`.mail ekle mail@gmail.com uygulama_sifresi\``
+                );
+                await sendVoiceNote(
+                  '905525222988@s.whatsapp.net',
+                  `Eren Bey, bağlı e-posta hesaplarınızdaki son mailleri ekranınıza listeledim. Önemli bir e-posta geldiğinde size anında haber vereceğim.`
+                );
+              } else {
+                await notifyOwnerSelfChat(`📭 Bağlı e-posta kutularında henüz yeni ileti bulunamadı.`);
+              }
+              continue;
+            }
+
             // 0-JARVIS: ".admin", ".admin qres tantavi", ".admin bildirim Başlık | Mesaj" -> TONY STARK SÜPER ADMİN KOMUTA MERKEZİ!
             if (myText === '.admin' || myText.startsWith('.admin ') || myText === '.qres' || myText.startsWith('.qres ')) {
               const rawSub = trimmedRaw.replace(/^\.(?:admin|qres)\s*/i, '').trim();
@@ -932,21 +1459,32 @@ async function startWhatsApp() {
                   const [titlePart, ...bodyParts] = payloadStr.split('|');
                   const title = bodyParts.length > 0 ? titlePart.trim() : 'NeYapsak Duyuru 🚀';
                   const message = bodyParts.length > 0 ? bodyParts.join('|').trim() : titlePart.trim();
+
+                  // 1) Eren'in kendi telefonuna ANINDA doğrudan Push gönder (1 saniye içinde düşsün!)
+                  await sendDirectPhonePush(title, message, { type: 'admin_broadcast' });
+
+                  // 2) NeYapsak Backend üzerinden tüm kullanıcılara gönder (body + targetType düzeltildi!)
                   const pushRes = await fetch(`${NEYAPSAK_API}/notifications/send`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-admin-key': NEYAPSAK_KEY },
-                    body: JSON.stringify({ title, message, target: 'all' }),
+                    body: JSON.stringify({
+                      title,
+                      body: message,
+                      targetType: 'all',
+                      message,
+                      target: 'all',
+                    }),
                   });
                   const pushData = await pushRes.json().catch(() => ({}));
                   await notifyOwnerSelfChat(
                     `📢 *NEYAPSAK SÜPER ADMİN PUSH BİLDİRİMİ GÖNDERİLDİ!* 🚀\n\n` +
                     `📌 *Başlık:* ${title}\n` +
                     `💬 *Mesaj:* ${message}\n` +
-                    `✅ *Durum:* Tüm kullanıcılara iletildi!`
+                    `✅ *Durum:* ${pushData.message || 'Tüm kullanıcılara ve telefonuna iletildi!'}`
                   );
                   await sendVoiceNote(
                     '905525222988@s.whatsapp.net',
-                    `Eren Bey, NeYapsak süper admin üzerinden tüm kullanıcılara bildirim başarıyla gönderildi.`
+                    `Eren Bey, NeYapsak süper admin üzerinden tüm kullanıcılara ve telefonunuza bildirim başarıyla gönderildi.`
                   );
                   continue;
                 }
@@ -2054,15 +2592,35 @@ app.post('/api/send-document', async (req, res) => {
 // Patron Eren'in Kendi "Siz" (905525222988) Sohbetine Önemli Mail & Toplantı Özeti Gönderme
 app.post('/api/send-self-note', async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!sock || connectionStatus !== 'connected') {
-      return res.status(503).json({ error: 'WhatsApp bağlı değil' });
-    }
-    const selfJid = '905525222988@s.whatsapp.net';
-    const sent = await sock.sendMessage(selfJid, { text });
-    if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
-    console.log(`📬 Patron Eren (Siz) sohbetine önemli bildirim iletildi.`);
-    res.json({ ok: true, id: sent?.key?.id });
+    const { text, title } = req.body;
+    await notifyOwnerSelfChat(text, title || '🤖 Avelon Bildirimi');
+    console.log(`📬 Patron Eren (Siz) sohbetine ve telefonuna önemli bildirim iletildi.`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 📞 Uzaktan Telefon Bulucu / Sahte Arama Tetikleyici API (Antigravity & Web Panel için)
+app.post('/api/find-my-phone', async (req, res) => {
+  try {
+    const { source } = req.body || {};
+    await startFindMyPhoneSiren(source || 'Antigravity AI Asistan');
+    res.json({ ok: true, message: 'Sahte arama ve telefon bulucu siren başlatıldı!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/stop-find-my-phone', (req, res) => {
+  stopFindMyPhoneSiren(true);
+  res.json({ ok: true });
+});
+
+app.post('/api/check-mail', async (req, res) => {
+  try {
+    const summaries = await pollAllMailAccounts(true);
+    res.json({ ok: true, summaries });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
