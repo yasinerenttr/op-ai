@@ -3021,9 +3021,20 @@ app.get('/api/jarvis-wake-audio', async (req, res) => {
   }
 });
 
+const VALID_JARVIS_PINS = new Set(['1453', '288', '5222988', 'eren288']);
+
 app.post('/api/jarvis-command', async (req, res) => {
   try {
-    const { text, alsoSendWhatsApp } = req.body || {};
+    const { text, alsoSendWhatsApp, pin } = req.body || {};
+    const clientPin = String(pin || req.headers['x-jarvis-pin'] || '').trim();
+    if (!VALID_JARVIS_PINS.has(clientPin)) {
+      const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'bilinmiyor';
+      notifyOwnerSelfChat(
+        `🚨 *GÜVENLİK UYARISI PATRON!*\nBirisi Avelon Jarvis sistemine yetkisiz şifreyle (\`${clientPin || 'şifresiz'}\`) girmeye çalıştı ve engellendi!\n🌐 *IP:* ${ip}`,
+        '🛡️ Avelon Güvenlik'
+      ).catch(() => {});
+      return res.status(403).json({ ok: false, error: 'Yetkisiz erişim! Sadece Patron Eren kullanabilir.' });
+    }
     if (!text) return res.status(400).json({ error: 'Metin gerekli' });
     const jarvisRes = await askJarvisBrain(text);
     if (jarvisRes.ignore) {
@@ -3246,16 +3257,55 @@ app.get('/jarvis', (req, res) => {
     </div>
   </div>
 
+  <!-- 🔒 PATRON ÖZEL GÜVENLİK KİLİDİ (YABANCILARA %100 KAPALI) -->
+  <div id="pinLockModal" style="display:none;position:fixed;inset:0;background:rgba(4,7,17,0.98);z-index:100000;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;">
+    <div style="font-size:52px;margin-bottom:12px;">🔒</div>
+    <div style="font-size:20px;font-weight:900;color:#38bdf8;letter-spacing:1px;margin-bottom:8px;">TATAR ENDÜSTRİ GÜVENLİK KİLİDİ</div>
+    <div style="font-size:13.5px;color:#94a3b8;max-width:320px;margin-bottom:20px;line-height:1.5;">
+      Bu sistem <b>Yasin Eren Tatar (Patron)</b> özel komuta merkezidir. Yetkisiz giriş denemeleri IP adresiyle WhatsApp'a bildirilir.
+    </div>
+    <input id="pinInput" type="password" inputmode="numeric" placeholder="Patron PIN Kodu" style="width:220px;padding:14px;border-radius:12px;border:2px solid #38bdf8;background:#0f172a;color:#fff;font-size:20px;font-weight:800;text-align:center;letter-spacing:6px;margin-bottom:14px;outline:none;" />
+    <button onclick="unlockJarvisPin()" style="width:220px;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#0284c7,#2563eb);color:#fff;font-size:15px;font-weight:800;cursor:pointer;">⚡ KİLİDİ AÇ</button>
+    <div id="pinErr" style="color:#f87171;font-size:13px;font-weight:700;margin-top:12px;"></div>
+  </div>
+
   <script>
     let isListening = false;
     let isSpeaking = false;
-    let activeWindowUntil = Date.now() + 3600000; // Varsayılan olarak her söylediğini dinler ve yanıtlar!
+    let activeWindowUntil = Date.now() + 3600000;
     let ignoreResultsUntil = 0;
     let lastSpokenReply = '';
     let recognition = null;
     let wakeAudioBase64 = null;
     let keepAliveCtx = null;
     const audioPlayer = new Audio();
+
+    // URL'de ?pin=1453 varsa veya daha önce telefona kaydedildiyse otomatik aç, yoksa kilitle!
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('pin')) {
+      localStorage.setItem('jarvis_patron_pin', urlParams.get('pin').trim());
+    }
+    let patronPin = localStorage.getItem('jarvis_patron_pin') || '';
+    const ALLOWED_CLIENT_PINS = ['1453', '288', '5222988', 'eren288'];
+    if (!ALLOWED_CLIENT_PINS.includes(patronPin)) {
+      document.getElementById('pinLockModal').style.display = 'flex';
+    }
+
+    function unlockJarvisPin() {
+      const val = (document.getElementById('pinInput').value || '').trim();
+      if (ALLOWED_CLIENT_PINS.includes(val)) {
+        patronPin = val;
+        localStorage.setItem('jarvis_patron_pin', val);
+        document.getElementById('pinLockModal').style.display = 'none';
+      } else {
+        document.getElementById('pinErr').textContent = '❌ Yetkisiz Şifre! Patron Eren\'e güvenlik bildirimi gönderildi.';
+        fetch('/api/jarvis-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: 'yetkisiz', pin: val || 'yanlis' })
+        }).catch(() => {});
+      }
+    }
 
     function enablePocketMode() {
       if (!isListening) toggleJarvis();
@@ -3441,7 +3491,7 @@ app.get('/jarvis', (req, res) => {
         const res = await fetch('/api/jarvis-command', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
+          body: JSON.stringify({ text, pin: patronPin })
         });
         const data = await res.json();
         if (data.ignore) {

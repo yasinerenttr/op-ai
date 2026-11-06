@@ -684,7 +684,7 @@ async function handleMacBackgroundSpoken(rawPhrase) {
       const res = await fetch(`${BOT_URL}/api/jarvis-command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cmdText, alsoSendWhatsApp: true }),
+        body: JSON.stringify({ text: cmdText, alsoSendWhatsApp: true, pin: '1453' }),
       });
       const data = await res.json();
       if (data && data.ok && !data.ignore && data.spoken) {
