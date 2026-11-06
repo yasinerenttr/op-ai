@@ -1282,7 +1282,7 @@ async function executeOutreachCallAndAsk(rawTargetNumber, customQuestion) {
   const sentTxt = await sock.sendMessage(targetJid, { text: writtenIntro });
   if (sentTxt?.key?.id) botSentMsgIds.add(sentTxt.key.id);
 
-  return { cleanPhone, questionText };
+  return { ok: true, cleanPhone, phone: cleanPhone, questionText, spoken: spokenIntro };
 }
 
 // Kişinin kendi WhatsApp profil fotoğrafını çekip "%80 Dolandırıcı gözüküyor, engellendiniz" mesajıyla yüzüne çarpıp engelleyen fonksiyon
@@ -1691,7 +1691,11 @@ async function startWhatsApp() {
 
           if (!extractedText) continue;
 
-          const trimmedRaw = extractedText.trim().replace(/^\.\s+/, '.');
+          const trimmedRaw = extractedText
+            .replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, '')
+            .replace(/\u00A0/g, ' ')
+            .trim()
+            .replace(/^\.\s+/, '.');
           const myText = trimmedRaw.toLocaleLowerCase('tr-TR');
 
           // A) Herhangi bir sohbette ".engel" veya ".dolandirici" yazarsa:
@@ -2111,10 +2115,10 @@ async function startWhatsApp() {
               );
               continue;
             }
-            // 1. ".ara 0532xxxxxxx Yarın için müsait misiniz?" veya doğal dille "0532xxxxxxx ara yarın için müsait misiniz"
+            // 1. ".ara +90 553 086 26 59 Yarın için müsait misiniz?" veya doğal dille "0532xxxxxxx ara yarın için müsait misiniz"
             const callMatch =
-              trimmedRaw.match(/^(?:\.ara|\.sesli|\.sekreter|ara|sesli)\s+(\+?\d[\d\s]{8,15})\s*(.*)$/i) ||
-              trimmedRaw.match(/^(\+?\d[\d\s]{9,15})\s+(?:ara|sor|yaz|de\s*ki)\s*(.*)$/i);
+              trimmedRaw.match(/^(?:\.ara|\.sesli|\.sekreter|ara|sesli)\s+(\+?[\d\s()\-]{9,24}?)(?:\s+([a-zA-ZğüşıöçĞÜŞİÖÇ].*))?$/i) ||
+              trimmedRaw.match(/^(\+?[\d\s()\-]{9,24}?)\s+(?:ara|sor|yaz|de\s*ki)\s*(.*)$/i);
 
             if (callMatch) {
               const targetNum = callMatch[1];
