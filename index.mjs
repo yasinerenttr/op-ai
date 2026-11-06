@@ -2244,9 +2244,12 @@ async function startWhatsApp() {
               }
             }
 
-            // 4. ".mod toplanti" | ".mod btm" | ".mod uyku" | ".mod normal"
-            if (myText.startsWith('.mod ')) {
-              const modeArg = myText.replace('.mod ', '').trim();
+            // 4. ".mod toplanti" | ".mod btm" | ".mod uyku" | ".mod ada" | ".mod normal"
+            if (myText.startsWith('.mod ') || myText === '.ada' || myText.includes('ada modunu aktif et') || myText === 'ada modu') {
+              const modeArg =
+                myText === '.ada' || myText.includes('ada mod')
+                  ? 'ada'
+                  : myText.replace('.mod ', '').trim();
               stateData.currentMode = modeArg;
               if (modeArg === 'btm' || modeArg === 'toplanti' || modeArg === 'toplantı') {
                 stateData.knownReplyText =
@@ -2254,11 +2257,14 @@ async function startWhatsApp() {
               } else if (modeArg === 'uyku' || modeArg === 'gece') {
                 stateData.knownReplyText =
                   "Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim. Eren Bey şu anda istirahatte olduğu için mesajınızı sabah brifing listesine ekledim; uyandığında ilk iş size dönüş sağlayacaktır.";
+              } else if (modeArg === 'ada') {
+                stateData.knownReplyText =
+                  "Merhabalar, ben Avelon 🤖 Eren Bey'in Yapay Zeka Yönetici Sekreteriyim. Eren Bey şu anda dış dünyadan izole Ada Modunda (odaklanma ve dinlenme sürecinde) olduğu için telefonuna bakamamaktadır. Mesajınızı kendisine ilettim; müsait olduğunda size dönüş sağlayacaktır.";
               } else {
                 stateData.knownReplyText = defaultData.knownReplyText;
               }
               saveData();
-              await notifyOwnerSelfChat(`🎛️ *Avelon Modu Değiştirildi:* *${modeArg.toUpperCase()}*\nYeni otomatik yanıt:\n"${stateData.knownReplyText}"`);
+              await notifyOwnerSelfChat(`🏝️ *Avelon Modu Değiştirildi:* *${modeArg.toUpperCase()}*\nYeni otomatik yanıt (Aynı kişiye 6 saatte sadece 1 kez atılır):\n"${stateData.knownReplyText}"`);
               continue;
             }
 
@@ -2352,22 +2358,47 @@ async function startWhatsApp() {
 
           if (isSelfChat) continue;
 
-          // Eren başka birinin sohbetine bizzat kendisi yazdıysa sadece 15 saniye boyunca Avelon araya girmesin
+          // Eren başka birinin sohbetine bizzat kendisi yazdıysa:
+          // 1) O kişiyi otomatik Kayıtlı Kişi yap (asla yabancı/şüpheli mesajı gitmesin!)
+          // 2) 6 SAAT boyunca o sohbette Avelon araya girmesin!
           if (extractedText) {
             ownerActiveChats[canonicalKey] = Date.now();
             ownerActiveChats[rawNum] = Date.now();
+            stateData.knownNumbers[canonicalKey] = {
+              ...(stateData.knownNumbers[canonicalKey] || {}),
+              name: stateData.knownNumbers[canonicalKey]?.name || 'Kişisel Sohbet',
+              source: 'Eren Yazıştı',
+              lastAutoReplyAt: Date.now(),
+              ownerLastWroteAt: Date.now(),
+            };
+            if (rawNum) {
+              stateData.knownNumbers[rawNum] = {
+                ...(stateData.knownNumbers[rawNum] || {}),
+                name: stateData.knownNumbers[rawNum]?.name || 'Kişisel Sohbet',
+                source: 'Eren Yazıştı',
+                lastAutoReplyAt: Date.now(),
+                ownerLastWroteAt: Date.now(),
+              };
+            }
+            if (stateData.strangerStages?.[canonicalKey]) delete stateData.strangerStages[canonicalKey];
+            if (stateData.strangerStages?.[rawNum]) delete stateData.strangerStages[rawNum];
+            saveData();
           }
           continue;
         }
 
         if (!stateData.enabled) continue;
 
-        // Eren son 15 saniye içinde bu kişiye bizzat mesaj yazdıysa Avelon o anlık araya girmesin
-        if (
-          (ownerActiveChats[canonicalKey] && Date.now() - ownerActiveChats[canonicalKey] < 15 * 1000) ||
-          (ownerActiveChats[rawNum] && Date.now() - ownerActiveChats[rawNum] < 15 * 1000)
-        ) {
-          console.log(`⏸️ Eren bu sohbete son 15 sn içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
+        // Eren son 6 SAAT içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin (Çoklu mesaj spamlamasını %100 önler!)
+        const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+        const lastOwnerWrite =
+          ownerActiveChats[canonicalKey] ||
+          ownerActiveChats[rawNum] ||
+          stateData.knownNumbers[canonicalKey]?.ownerLastWroteAt ||
+          stateData.knownNumbers[rawNum]?.ownerLastWroteAt ||
+          0;
+        if (lastOwnerWrite && Date.now() - lastOwnerWrite < SIX_HOURS_MS) {
+          console.log(`⏸️ Eren bu sohbete yakın zamanda bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
           continue;
         }
 
@@ -2493,10 +2524,11 @@ async function startWhatsApp() {
           }
 
           const lastReply = entry.lastAutoReplyAt || 0;
-          const cooldownMs = Math.max(1, Number(stateData.knownCooldownMinutes) || 3) * 60 * 1000;
+          // Aynı kişiye en az 6 saatte (360 dk) sadece 1 kez oto-sekreter mesajı at (üst üste mesaj atmasını önler!)
+          const cooldownMs = Math.max(360, Number(stateData.knownCooldownMinutes) || 360) * 60 * 1000;
 
           if (Date.now() - lastReply < cooldownMs) {
-            console.log(`⏳ Kayıtlı kişi (${entry.name}) bekleme süresinde olduğu için tekrar yazılmadı.`);
+            console.log(`⏳ Kayıtlı kişi (${entry.name}) 6 saatlik bekleme süresinde olduğu için tekrar yazılmadı.`);
             continue;
           }
 

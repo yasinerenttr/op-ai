@@ -113,15 +113,17 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
-  // 2) PC Ekranı Kapat / Uyku Modu (.uyku modu, .pc kapat, ekranı kapat, kilitle)
+  // 2) PC Ekranı Kapat / Uyku Modu (.uyku modu, .pc kapat, .pc kapak, ekranı kapat, kilitle, ada modu)
   if (
     low.includes('uyku') ||
     low.includes('pc kapat') ||
+    low.includes('pc kapak') ||
     low.includes('bilgisayarı kapat') ||
     low.includes('ekranı kapat') ||
     low.includes('ekrani kapat') ||
     low.includes('pc uyut') ||
-    low.includes('pc kilitle')
+    low.includes('pc kilitle') ||
+    low.includes('ada mod')
   ) {
     exec('osascript -e "set volume output volume 0"');
     exec('pmset displaysleepnow');
