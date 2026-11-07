@@ -2748,6 +2748,8 @@ async function startWhatsApp() {
 
         const callTypeLabel = call.isVideo ? 'görüntülü aramanızı' : 'sesli aramanızı';
 
+        const spokenAlert = `Efendim, şu an ${callerName} sizi ${call.isVideo ? 'görüntülü olarak ' : ''}arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?`;
+
         globalThis.lastIncomingCall = {
           callId: call.id,
           callFrom: callerJid,
@@ -2757,9 +2759,27 @@ async function startWhatsApp() {
           callerName,
           isKnown,
           isVideo: Boolean(call.isVideo),
+          spokenAlert,
+          audioBase64: null,
+          phoneAnnounced: false,
           decision: null, // 'accept' | 'reject'
           timestamp: Date.now(),
         };
+
+        // Telefon (/jarvis) için ses dosyasını hazırla + WhatsApp "Siz" sohbetine de sesli anons at
+        generateNeuralMp3Buffer(spokenAlert)
+          .then(({ fullMp3 }) => {
+            if (fullMp3 && globalThis.lastIncomingCall?.callId === call.id) {
+              globalThis.lastIncomingCall.audioBase64 = fullMp3.toString('base64');
+            }
+          })
+          .catch(() => {});
+        sendVoiceNote('905525222988@s.whatsapp.net', spokenAlert).catch(() => {});
+        sendDirectPhonePush(
+          `📞 Efendim, ${callerName} Sizi Arıyor!`,
+          `🗣️ "Efendim, ${callerName} sizi arıyor, açayım mı?" (.kapat yazarsanız Avelon meşgule atıp konuşur)`,
+          { type: 'incoming_call', callerName, phone: canonicalKey }
+        ).catch(() => {});
 
         // 1) Mac'teki Avelon'a ANINDA sesli anons görevi gönder ("Efendim, şu kişi sizi arıyor, açayım mı?")
         stateData.gemiTasks = stateData.gemiTasks || [];
@@ -2917,7 +2937,34 @@ app.post('/api/gemi-tasks/complete', async (req, res) => {
   }
 });
 
-// Gelen Arama Karar Endpoint'i (Mac'ten Sesli "Aç" veya "Kapat / Sen Konuş" denildiğinde)
+// Telefon (/jarvis) için Canlı Gelen Arama Yoklama Endpoint'i
+app.get('/api/incoming-call-poll', async (req, res) => {
+  try {
+    const cur = globalThis.lastIncomingCall;
+    if (!cur || cur.decision || Date.now() - cur.timestamp > 30000) {
+      return res.json({ active: false });
+    }
+    if (!cur.audioBase64 && cur.spokenAlert) {
+      try {
+        const { fullMp3 } = (await generateNeuralMp3Buffer(cur.spokenAlert)) || {};
+        if (fullMp3) cur.audioBase64 = fullMp3.toString('base64');
+      } catch (_) {}
+    }
+    res.json({
+      active: true,
+      callId: cur.callId,
+      callerName: cur.callerName,
+      phone: cur.canonicalKey,
+      isVideo: cur.isVideo,
+      spokenAlert: cur.spokenAlert || `Efendim, şu an ${cur.callerName} sizi arıyor, açayım mı?`,
+      audioBase64: cur.audioBase64 || null,
+    });
+  } catch (err) {
+    res.json({ active: false });
+  }
+});
+
+// Gelen Arama Karar Endpoint'i (Mac'ten veya Telefondan Sesli "Aç" veya "Kapat / Sen Konuş" denildiğinde)
 app.post('/api/call-action', async (req, res) => {
   try {
     const { action, customMessage } = req.body || {};
@@ -3465,6 +3512,24 @@ app.get('/jarvis', (req, res) => {
     </div>
   </div>
 
+  <!-- 📞 GELEN ARAMA CANLI KARAR MODALI (TELEFONDA OTOMATİK SESLİ AÇILIR) -->
+  <div id="incomingCallModal" style="display:none;position:fixed;inset:0;background:rgba(4,7,17,0.96);z-index:99998;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;">
+    <div style="font-size:62px;margin-bottom:10px;animation:pulseGold 0.9s infinite;">📞</div>
+    <div style="font-size:13px;font-weight:800;color:#38bdf8;letter-spacing:1.5px;margin-bottom:6px;">GELEN ARAMA ALGILANDI</div>
+    <div id="callModalName" style="font-size:26px;font-weight:900;color:#ffffff;margin-bottom:8px;">Bilinmeyen Numara</div>
+    <div id="callModalSub" style="font-size:15px;color:#fcd34d;font-weight:700;max-width:340px;margin-bottom:24px;line-height:1.45;">
+      "Efendim, şu an sizi arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?"
+    </div>
+    <div style="display:flex;gap:12px;width:100%;max-width:360px;">
+      <button onclick="sendCallDecision('accept')" style="flex:1;padding:16px 12px;border-radius:14px;border:none;background:#10b981;color:#042f2e;font-size:15px;font-weight:900;cursor:pointer;">
+        ✅ AÇ (BEN KONUŞACAĞIM)
+      </button>
+      <button onclick="sendCallDecision('reject')" style="flex:1;padding:16px 12px;border-radius:14px;border:none;background:#ef4444;color:#ffffff;font-size:15px;font-weight:900;cursor:pointer;">
+        🛑 MEŞGULE AT (AVELON KONUŞSUN)
+      </button>
+    </div>
+  </div>
+
   <!-- TELEFON EKRANI KAPALI GİBİ GÖRÜNEN TAM SİYAH CEP NÖBET KATMANI -->
   <div id="pocketOverlay" ondblclick="disablePocketMode()" style="display:none;position:fixed;inset:0;background:#000000;z-index:99999;flex-direction:column;align-items:center;justify-content:center;color:#1e293b;user-select:none;">
     <div style="font-size:12px;font-weight:700;color:#1e293b;text-align:center;padding:20px;">
@@ -3664,6 +3729,28 @@ app.get('/jarvis', (req, res) => {
       document.getElementById('heardBox').textContent = '👂 Duyulan: "' + clean + '"';
 
       const low = clean.toLocaleLowerCase('tr-TR').replace(/[?!.,]/g, '').trim();
+
+      // Eğer o sırada aktif bir gelen arama varsa doğrudan "Aç" veya "Kapat / Sen konuş" kararını uygula!
+      if (window.activeCallIdNow) {
+        if (
+          low.includes('kapat') ||
+          low.includes('açma') ||
+          low.includes('acma') ||
+          low.includes('reddet') ||
+          low.includes('meşgul') ||
+          low.includes('sen konuş') ||
+          low.includes('sen konus') ||
+          low.includes('hayır')
+        ) {
+          await sendCallDecision('reject');
+          return;
+        }
+        if (low.includes('aç') || low.includes('ac') || low.includes('evet') || low.includes('tamam')) {
+          await sendCallDecision('accept');
+          return;
+        }
+      }
+
       if (low === 'beklemeye geç' || low === 'teşekkürler avelon' || low === 'tamam avelon') {
         activeWindowUntil = 0;
         document.getElementById('stateTitle').textContent = 'Nöbet Modu ("Avelon" Deyince Uyanır)';
@@ -3801,6 +3888,46 @@ app.get('/jarvis', (req, res) => {
 
       try { recognition.start(); } catch (_) {}
     }
+
+    window.activeCallIdNow = null;
+    window.announcedCallIds = new Set();
+
+    async function sendCallDecision(action) {
+      document.getElementById('incomingCallModal').style.display = 'none';
+      window.activeCallIdNow = null;
+      try {
+        await fetch('/api/call-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action })
+        });
+        const msg = action === 'reject'
+          ? 'Emredersiniz Efendim, aramayı meşgule attım ve sekreter olarak ben yanıtlıyorum.'
+          : 'Emredersiniz Efendim, aramayı size bırakıyorum.';
+        document.getElementById('replyBox').textContent = '📞 ' + msg;
+      } catch (_) {}
+    }
+
+    setInterval(async () => {
+      try {
+        const r = await fetch('/api/incoming-call-poll');
+        const d = await r.json();
+        if (d && d.active && d.callId) {
+          window.activeCallIdNow = d.callId;
+          document.getElementById('callModalName').textContent = d.callerName || 'Gelen Arama';
+          document.getElementById('callModalSub').textContent = '🗣️ "' + (d.spokenAlert || 'Efendim, sizi arıyor, açayım mı?') + '"';
+          document.getElementById('incomingCallModal').style.display = 'flex';
+          if (!window.announcedCallIds.has(d.callId) && d.audioBase64) {
+            window.announcedCallIds.add(d.callId);
+            activeWindowUntil = Date.now() + 60000;
+            await playBase64Mp3(d.audioBase64, d.spokenAlert);
+          }
+        } else if (window.activeCallIdNow) {
+          window.activeCallIdNow = null;
+          document.getElementById('incomingCallModal').style.display = 'none';
+        }
+      } catch (_) {}
+    }, 2000);
   </script>
 </body>
 </html>`);
