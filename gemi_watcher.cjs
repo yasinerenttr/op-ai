@@ -88,9 +88,156 @@ async function searchAndOpenYouTube(query) {
   return { targetUrl, videoTitle };
 }
 
+async function listenOnceForCallDecision(maxSeconds = 8) {
+  const ffPath = fs.existsSync(FFMPEG_BIN) ? FFMPEG_BIN : 'ffmpeg';
+  const pyScript = `
+import subprocess, sys, audioop
+import speech_recognition as sr
+
+FFMPEG = ${JSON.stringify(ffPath)}
+cmd = [FFMPEG, "-loglevel", "quiet", "-f", "avfoundation", "-i", ":0", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"]
+proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=6400)
+
+r = sr.Recognizer()
+FRAME_BYTES = 6400
+speech_frames = []
+silent_count = 0
+max_frames = int(${maxSeconds} * 5)
+
+try:
+    for _ in range(max_frames):
+        frame = proc.stdout.read(FRAME_BYTES)
+        if not frame or len(frame) < FRAME_BYTES:
+            break
+        rms = audioop.rms(frame, 2)
+        if len(speech_frames) == 0:
+            if rms > 38:
+                speech_frames.append(frame)
+                silent_count = 0
+        else:
+            speech_frames.append(frame)
+            if rms < 32:
+                silent_count += 1
+            else:
+                silent_count = 0
+            if silent_count >= 4 or len(speech_frames) >= 25:
+                break
+finally:
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+
+if len(speech_frames) > 0:
+    try:
+        pcm_data = b"".join(speech_frames)
+        boosted = audioop.mul(pcm_data, 2, 2.5)
+        audio_obj = sr.AudioData(boosted, 16000, 2)
+        txt = r.recognize_google(audio_obj, language="tr-TR")
+        if txt:
+            print(txt.strip(), flush=True)
+    except Exception:
+        pass
+`;
+  try {
+    const heard = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
+      encoding: 'utf-8',
+      timeout: (maxSeconds + 4) * 1000,
+    }).trim();
+    return heard;
+  } catch (_) {
+    return '';
+  }
+}
+
 async function handleInstantMacCommand(task, isVoiceTask = false) {
   const raw = (task.prompt || '').trim();
   const low = raw.toLocaleLowerCase('tr-TR');
+
+  // 0.1) 📞 GELEN ARAMA SESLİ ANONSU VE SESLİ KARAR SİSTEMİ ("Efendim, şu kişi sizi arıyor, açayım mı?")
+  if (raw.startsWith('__INCOMING_CALL__:')) {
+    let callInfo = {};
+    try {
+      callInfo = JSON.parse(raw.slice('__INCOMING_CALL__:'.length));
+    } catch (_) {}
+
+    const callerName = callInfo.callerName || 'Bilinmeyen bir numara';
+    const callKind = callInfo.isVideo ? 'görüntülü olarak' : '';
+
+    // Görevi hemen tamamlandı işaretle (WhatsApp'a gereksiz görev mesajı atmasın)
+    await completeTask(task.id, '', '');
+
+    try {
+      execSync('osascript -e "set volume output volume 85 without output muted"');
+    } catch (_) {}
+
+    // 1) Avelon sesli olarak sorar:
+    await speakTextOnMac(`Efendim, şu an ${callerName} sizi ${callKind} arıyor. Açayım mı?`);
+
+    // 2) Sadece 8 saniyeliğine mikrofonu açıp Patron'un cevabını dinle ("Aç" veya "Kapat / Açma / Sen konuş")
+    const heard = await listenOnceForCallDecision(8);
+    const hLow = (heard || '').toLocaleLowerCase('tr-TR');
+
+    if (
+      hLow.includes('kapat') ||
+      hLow.includes('açma') ||
+      hLow.includes('acma') ||
+      hLow.includes('reddet') ||
+      hLow.includes('meşgul') ||
+      hLow.includes('mesgul') ||
+      hLow.includes('sen konuş') ||
+      hLow.includes('sen konus') ||
+      hLow.includes('hayır') ||
+      hLow.includes('hayir') ||
+      hLow.includes('müsait değil')
+    ) {
+      await fetch(`${BOT_URL}/api/call-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject' }),
+      }).catch(() => {});
+      await speakTextOnMac(`Emredersiniz Efendim, ${callerName} aramasını meşgule attım ve sekreter olarak ben yanıtlıyorum.`);
+    } else if (
+      hLow.includes('aç') ||
+      hLow.includes('ac') ||
+      hLow.includes('evet') ||
+      hLow.includes('bağla') ||
+      hLow.includes('bagla') ||
+      hLow.includes('tamam') ||
+      hLow.includes('olur')
+    ) {
+      await fetch(`${BOT_URL}/api/call-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept' }),
+      }).catch(() => {});
+      await speakTextOnMac(`Emredersiniz Efendim, aramayı size bırakıyorum.`);
+    }
+    return true;
+  }
+
+  // 0.5) 👑 SULTAN YASİN EREN HAN — MUHTEŞEM YÜZYIL & AVELON DESTUR PROTOKOLÜ (.destur, destur, hakanlar hakanı)
+  if (
+    low.includes('destur') ||
+    low.includes('hakanlar') ||
+    low.includes('7 cihan') ||
+    low.includes('yedi cihan') ||
+    low.includes('sultanlar')
+  ) {
+    exec('caffeinate -u -t 3600');
+    exec('osascript -e "set volume output volume 100 without output muted"');
+    exec('open -a "Google Chrome 2" "/Users/yasineren/Desktop/wp-asistan-bot/avelon_destur.html" 2>/dev/null || open "/Users/yasineren/Desktop/wp-asistan-bot/avelon_destur.html"');
+    exec('pkill -f "afplay.*muhtesem_jenerik" 2>/dev/null; pkill -f "afplay.*destur_ses" 2>/dev/null; (/usr/bin/afplay -v 0.45 "/Users/yasineren/Desktop/wp-asistan-bot/muhtesem_jenerik.m4a" &) && sleep 2.2 && /usr/bin/afplay -v 2.5 "/Users/yasineren/Desktop/wp-asistan-bot/destur_ses.mp3"');
+    await completeTask(
+      task.id,
+      `👑 *DESTUUUUR! SULTAN YASİN EREN TATAR HAN HAZRETLERİ SALTANAT FERMANI BAŞLATILDI!* ⚔️🇹🇷🔥\n\n` +
+        `1️⃣ Mac Sesi **%100** yapıldı ve ekranda **Avelon Saltanat Fermanı** açıldı!\n` +
+        `2️⃣ Arkada **Muhteşem Yüzyıl Jenerik** müziği eşliğinde Avelon gür sesiyle:\n` +
+        `_"Destuuuuur! Dikkat! Hakanlar Hakanı, Sultanlar Sultanı, Yedi İklime ve Yedi Cihana Hükmeden... Sultan Yasin Eren Tatar Han Hazretleri teşrif ediyorlar!"_ anonsunu yapıyor!`,
+      `Destur! Hakanlar Hakanı, Sultanlar Sultanı, Yedi Cihana Hükmeden Sultan Yasin Eren Tatar Han Hazretleri teşrif ediyorlar!`
+    );
+    return true;
+  }
 
   // 1) PC Aç / Ekranı Uyandır (.pc aç, @gemi pc aç, ekranı aç, bilgisayarı aç)
   if (
@@ -113,7 +260,32 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
-  // 2) PC Ekranı Kapat / Uyku Modu (.uyku modu, .pc kapat, .pc kapak, ekranı kapat, kilitle, ada modu)
+  // 1.5) DİNAMİK ADA & DOKUNMATİK EL KONTROLÜ (MacTouchIsland.app)
+  if (
+    low.includes('ada mod') ||
+    low.includes('dinamik ada') ||
+    low.includes('dokunmatik ada') ||
+    low === '.ada'
+  ) {
+    if (low.includes('kapat') || low.includes('durdur')) {
+      exec('pkill -f "MacTouchIsland.app/Contents/MacOS/MacTouchIsland"');
+      await completeTask(
+        task.id,
+        `🔴 *DİNAMİK ADA & DOKUNMATİK MOD KAPATILDI PATRON!*`,
+        `Emredersiniz Patron, Mac bilgisayarınızdaki Dinamik Ada ve dokunmatik el kontrolünü kapattım.`
+      );
+    } else {
+      exec('open /Users/yasineren/Desktop/mac-touch-ai/MacTouchIsland.app');
+      await completeTask(
+        task.id,
+        `🏝️ *DİNAMİK ADA & DOKUNMATİK EL KONTROLÜ AKTİF EDİLDİ PATRON!* ⚡\n\nMac ekranının üst kısmında Dinamik Ada ve kamera el hareketi kontrolü başlatıldı!`,
+        `Emredersiniz Patron, Mac bilgisayarınızda Dinamik Ada ve dokunmatik el kontrol modunu hemen aktif ettim.`
+      );
+    }
+    return true;
+  }
+
+  // 2) PC Ekranı Kapat / Uyku Modu (.uyku modu, .pc kapat, .pc kapak, ekranı kapat, kilitle)
   if (
     low.includes('uyku') ||
     low.includes('pc kapat') ||
@@ -122,8 +294,7 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     low.includes('ekranı kapat') ||
     low.includes('ekrani kapat') ||
     low.includes('pc uyut') ||
-    low.includes('pc kilitle') ||
-    low.includes('ada mod')
+    low.includes('pc kilitle')
   ) {
     exec('osascript -e "set volume output volume 0"');
     exec('pmset displaysleepnow');
@@ -445,7 +616,21 @@ async function poll() {
         }
         if (remainingForAntigravity.length > 0) {
           console.log('GEMI_TASK_RECEIVED:', JSON.stringify(remainingForAntigravity));
-          process.exit(0); // Wakes up Antigravity for coding/project tasks!
+          for (const remTask of remainingForAntigravity) {
+            try {
+              const jRes = await fetch(`${BOT_URL}/api/jarvis-chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: remTask.prompt }),
+              });
+              const jData = await jRes.json().catch(() => ({}));
+              await completeTask(
+                remTask.id,
+                jData.display || `✅ *Mesajın Alındı Patron:* "${remTask.prompt}"`,
+                jData.spoken || 'Mesajınız alındı Eren Bey.'
+              );
+            } catch (_) {}
+          }
         }
       }
     }
@@ -492,7 +677,7 @@ async function poll() {
   }
 }
 
-setInterval(poll, 4000);
+setInterval(poll, 2000);
 poll();
 
 // ============================================================================
@@ -786,4 +971,5 @@ while True:
   });
 }
 
-startMacBackgroundVoiceJarvis();
+// Mikrofon dinleyicisi devre dışı bırakıldı (Sadece istenirse aktif edilir)
+// startMacBackgroundVoiceJarvis();

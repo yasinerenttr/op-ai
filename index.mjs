@@ -1768,6 +1768,44 @@ async function startWhatsApp() {
               continue;
             }
 
+            if (
+              myText === '.kapat' ||
+              myText === '.reddet' ||
+              myText === '.açma' ||
+              myText === '.acma' ||
+              myText === 'aramayı kapat' ||
+              myText === 'meşgule at'
+            ) {
+              const current = globalThis.lastIncomingCall;
+              if (current && Date.now() - current.timestamp < 60000) {
+                current.decision = 'reject';
+                if (sock && current.callId && current.callFrom) {
+                  try { await sock.rejectCall(current.callId, current.callFrom); } catch (_) {}
+                }
+                const voiceText =
+                  `Merhabalar, ben Avelon, Yasin Eren Bey'in yapay zeka yönetici sekreteriyim. ` +
+                  `Şu an Eren Bey müsait olmadığı için aramanızı ben karşıladım; kendisi müsait olunca sizi arayacaktır. Acil bir notunuz varsa bana buradan iletebilirsiniz.`;
+                if (current.callerJid) {
+                  await sendVoiceNote(current.callerJid, voiceText).catch(() => {});
+                  const sent = await sock.sendMessage(current.callerJid, {
+                    text: `🎙️ *AVELON SESLİ SEKRETER YANITI*\n\nMerhabalar, ben Avelon 🤖 Yasin Eren Bey'in Yapay Zeka Yönetici Sekreteriyim.\n\nŞu an Eren Bey müsait olmadığı için aramanızı açamadı; **müsait olunca sizi arayacaktır.** Acil bir notunuz varsa bana yazabilirsiniz, kendisine hemen ileteceğim.`,
+                  }).catch(() => null);
+                  if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
+                }
+                await notifyOwnerSelfChat(`🛡️ *ARAMA MEŞGULE ATILDI & AVELON SEKRETER DEVREYE GİRDİ!* (${current.callerName})`);
+                continue;
+              }
+            }
+
+            if (myText === '.aç' || myText === '.ac' || myText === 'aramayı aç') {
+              const current = globalThis.lastIncomingCall;
+              if (current && Date.now() - current.timestamp < 60000) {
+                current.decision = 'accept';
+                await notifyOwnerSelfChat(`✅ *ARAMA SİZE BIRAKILDI PATRON!* 📞 (${current.callerName})`);
+                continue;
+              }
+            }
+
             // 0-MAIL KONTROL VE HESAP BAĞLAMA (.mail, .mail kontrol, .mail ekle eposta@gmail.com uygulama_sifresi)
             if (myText === '.mail' || myText.startsWith('.mail ')) {
               const mailSub = trimmedRaw.replace(/^\.mail\s*/i, '').trim();
@@ -2674,10 +2712,12 @@ async function startWhatsApp() {
     }
   });
 
-  // Gelen WhatsApp Sesli / Görüntülü Aramalarını Dinle ve SESLİ SEKRETER (🎤) + Yazılı Yanıt Ver
+  // Gelen WhatsApp Sesli / Görüntülü Aramalarını Dinle:
+  // 1) Mac'te Avelon hemen sesli olarak: "Efendim, [Kişi] sizi arıyor, açayım mı?" diye sorar!
+  // 2) Patron "Kapat / Açma / Sen konuş" derse aramayı meşgule atar (sock.rejectCall) ve Avelon sesli sekreter olarak konuşur!
   const recentCallReplies = {};
   sock.ev.on('call', async (calls) => {
-    if (!stateData.enabled || !Array.isArray(calls)) return;
+    if (!Array.isArray(calls)) return;
 
     for (const call of calls) {
       try {
@@ -2690,22 +2730,77 @@ async function startWhatsApp() {
         if (!canonicalKey) continue;
         if (connectedUser?.id && (canonicalKey === connectedUser.id || rawNum === connectedUser.id)) continue;
 
-        // Aynı aramaya 2 dakika içinde tekrar tekrar mesaj atmasın
-        if (recentCallReplies[canonicalKey] && Date.now() - recentCallReplies[canonicalKey] < 2 * 60 * 1000) {
+        if (recentCallReplies[canonicalKey] && Date.now() - recentCallReplies[canonicalKey] < 45 * 1000) {
           continue;
         }
         recentCallReplies[canonicalKey] = Date.now();
 
+        const isKnown = isKnownPerson(rawNum) || isKnownPerson(canonicalKey);
+        const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[rawNum];
+        const strangerEntry = stateData.strangerStages?.[canonicalKey] || stateData.strangerStages?.[rawNum];
+        const formattedPhone = canonicalKey.startsWith('90')
+          ? `0${canonicalKey.slice(2, 5)} ${canonicalKey.slice(5, 8)} ${canonicalKey.slice(8, 10)} ${canonicalKey.slice(10)}`
+          : `+${canonicalKey}`;
+        const callerName =
+          entry?.name ||
+          (strangerEntry?.pushName && strangerEntry.pushName !== 'Arayan Numara' ? strangerEntry.pushName : null) ||
+          `Kayıtsız Numara (${formattedPhone})`;
+
         const callTypeLabel = call.isVideo ? 'görüntülü aramanızı' : 'sesli aramanızı';
 
-        if (isKnownPerson(rawNum) || isKnownPerson(canonicalKey)) {
-          if (!stateData.replyToKnownContacts) continue;
-          const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[rawNum];
-          const contactName = entry?.name || 'Rehber Kişisi';
-          console.log(`📞 Kayıtlı kişiden (${contactName} - +${canonicalKey}) WhatsApp araması geldi, Avelon SESLİ yanıt gönderiyor...`);
+        globalThis.lastIncomingCall = {
+          callId: call.id,
+          callFrom: callerJid,
+          callerJid,
+          canonicalKey,
+          rawNum,
+          callerName,
+          isKnown,
+          isVideo: Boolean(call.isVideo),
+          decision: null, // 'accept' | 'reject'
+          timestamp: Date.now(),
+        };
 
-          setTimeout(async () => {
-            try {
+        // 1) Mac'teki Avelon'a ANINDA sesli anons görevi gönder ("Efendim, şu kişi sizi arıyor, açayım mı?")
+        stateData.gemiTasks = stateData.gemiTasks || [];
+        stateData.gemiTasks.push({
+          id: 'GEMI-CALL-' + Date.now(),
+          prompt:
+            '__INCOMING_CALL__:' +
+            JSON.stringify({
+              callId: call.id,
+              callFrom: callerJid,
+              callerName,
+              phone: canonicalKey,
+              isVideo: Boolean(call.isVideo),
+              isKnown,
+            }),
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+        saveData();
+
+        // 2) Patron'un "Siz" sohbetine anlık bildirim at
+        notifyOwnerSelfChat(
+          `📞 *GELEN ARAMA ALGILANDI!* 🚨\n\n` +
+            `👤 *Arayan:* *${callerName}* (+${canonicalKey})\n` +
+            `📱 *Tür:* ${call.isVideo ? 'Görüntülü Arama 📹' : 'Sesli Arama 📞'}\n` +
+            `🗣️ *Avelon:* _"Efendim, ${callerName} sizi arıyor, açayım mı?"_\n\n` +
+            `🎙️ *Mac'e sesli olarak "Aç" veya "Kapat / Sen konuş" diyebilirsiniz!*`
+        ).catch(() => {});
+
+        // 3) Eğer Oto-Sekreter (stateData.enabled) açıksa ve Patron 11 saniye içinde "Aç" demediyse otomatik sekreter devreye girsin
+        setTimeout(async () => {
+          try {
+            const current = globalThis.lastIncomingCall;
+            if (current && current.callId === call.id && current.decision) {
+              // Patron zaten sesli/yazılı karar verdi (accept veya reject işlendi)
+              return;
+            }
+            if (!stateData.enabled) return;
+
+            if (isKnown) {
+              if (!stateData.replyToKnownContacts) return;
               const voiceCallReply =
                 `Merhabalar, ben Avelon, Yasin Eren Bey'in yapay zeka yönetici sekreteriyim. ` +
                 `Şu an Eren Bey müsait değil, müsait olunca sizi arayacaktır. Acil bir notunuz varsa bana buradan iletebilirsiniz.`;
@@ -2717,41 +2812,27 @@ async function startWhatsApp() {
                 `Şu an Eren Bey müsait olmadığı için ${callTypeLabel} açamadı; **müsait olunca sizi arayacaktır.** Acil bir notunuz varsa bana yazabilirsiniz, kendisine hemen ileteceğim.`;
               const sent = await sock.sendMessage(callerJid, { text: callReplyText });
               if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
+            } else {
+              let stranger = stateData.strangerStages[canonicalKey] || stateData.strangerStages[rawNum];
+              if (!stranger) {
+                const assignedQueueNo = Number(stateData.nextQueueNumber) || 60;
+                stateData.nextQueueNumber = assignedQueueNo + 1;
+                stranger = {
+                  stage: 1,
+                  jid: callerJid,
+                  phone: canonicalKey,
+                  pushName: 'Arayan Numara',
+                  queueNo: assignedQueueNo,
+                  msgCount: 1,
+                  blocked: false,
+                  firstMsg: `[WhatsApp ${call.isVideo ? 'Görüntülü' : 'Sesli'} Arama]`,
+                  introMsg: '',
+                  updatedAt: new Date().toISOString(),
+                };
+                stateData.strangerStages[canonicalKey] = stranger;
+                saveData();
+              }
 
-              await notifyOwnerSelfChat(
-                `📞 *CEVAPSIZ WHATSAPP ARAMASI (Avelon Sesli Açtı)* 🎙️\n\n` +
-                `👤 *Arayan:* ${contactName} (+${canonicalKey})\n` +
-                `📱 *Tür:* ${call.isVideo ? 'Görüntülü Arama' : 'Sesli Arama'}\n` +
-                `🗣️ *Avelon'un Söylediği:* "Şu an Eren Bey müsait değil, müsait olunca sizi arayacak."`
-              );
-            } catch (e) {
-              console.error('Arama yanıt hatası (kayıtlı):', e.message);
-            }
-          }, 3000);
-        } else {
-          console.log(`📞 Yabancı numaradan (+${canonicalKey}) WhatsApp araması geldi, Avelon SESLİ randevu yanıtı gönderiyor...`);
-          let stranger = stateData.strangerStages[canonicalKey] || stateData.strangerStages[rawNum];
-          if (!stranger) {
-            const assignedQueueNo = Number(stateData.nextQueueNumber) || 60;
-            stateData.nextQueueNumber = assignedQueueNo + 1;
-            stranger = {
-              stage: 1,
-              jid: callerJid,
-              phone: canonicalKey,
-              pushName: 'Arayan Numara',
-              queueNo: assignedQueueNo,
-              msgCount: 1,
-              blocked: false,
-              firstMsg: `[WhatsApp ${call.isVideo ? 'Görüntülü' : 'Sesli'} Arama]`,
-              introMsg: '',
-              updatedAt: new Date().toISOString(),
-            };
-            stateData.strangerStages[canonicalKey] = stranger;
-            saveData();
-          }
-
-          setTimeout(async () => {
-            try {
               const voiceCallStranger =
                 `Merhabalar, ben Avelon, Yasin Eren Bey'in yapay zeka yönetici sekreteriyim. ` +
                 `Şu an Eren Bey müsait değil, müsait olunca dönüş yapacaktır. Numaranız özel rehberde kayıtlı görünmüyor; lütfen kim olduğunuzu ve hangi konuda aradığınızı yazılı olarak iletin, size hemen randevu sırası oluşturayım.`;
@@ -2761,17 +2842,11 @@ async function startWhatsApp() {
                 text: stateData.firstReplyText,
               });
               if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
-
-              await notifyOwnerSelfChat(
-                `📞 *YABANCI NUMARADAN CEVAPSIZ ARAMA (Avelon Sesli Karşıladı)* 🎙️\n\n` +
-                `📱 *Numara:* +${canonicalKey}\n` +
-                `🗣️ *Avelon:* Sesli olarak "Eren Bey şu an müsait değil" dedi ve kimliğini/konusunu sordu.`
-              );
-            } catch (e) {
-              console.error('Arama yanıt hatası (yabancı):', e.message);
             }
-          }, 3000);
-        }
+          } catch (e) {
+            console.error('Arama yanıt hatası:', e.message);
+          }
+        }, 11000);
       } catch (err) {
         console.error('Arama işleme hatası:', err.message);
       }
@@ -2837,6 +2912,111 @@ app.post('/api/gemi-tasks/complete', async (req, res) => {
       await sendVoiceNote('905525222988@s.whatsapp.net', voiceText);
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Gelen Arama Karar Endpoint'i (Mac'ten Sesli "Aç" veya "Kapat / Sen Konuş" denildiğinde)
+app.post('/api/call-action', async (req, res) => {
+  try {
+    const { action, customMessage } = req.body || {};
+    const current = globalThis.lastIncomingCall;
+    if (!current) {
+      return res.json({ ok: false, message: 'Aktif gelen arama bulunamadı.' });
+    }
+
+    if (action === 'accept') {
+      current.decision = 'accept';
+      await notifyOwnerSelfChat(`✅ *ARAMA SİZE BIRAKILDI PATRON!* 📞 (${current.callerName})`);
+      return res.json({ ok: true, action: 'accept', callerName: current.callerName });
+    }
+
+    if (action === 'reject' || action === 'secretary') {
+      current.decision = 'reject';
+      // 1) Çalan WhatsApp aramasını telefondan meşgule at (kapat)
+      if (sock && current.callId && current.callFrom) {
+        try {
+          await sock.rejectCall(current.callId, current.callFrom);
+        } catch (rejErr) {
+          console.warn('rejectCall uyarısı:', rejErr.message);
+        }
+      }
+
+      // 2) Arayan kişiye Avelon Sesli Sekreter kaydı + mesaj gönder
+      const callerJid = current.callerJid;
+      const voiceText =
+        customMessage ||
+        `Merhabalar, ben Avelon, Yasin Eren Bey'in yapay zeka yönetici sekreteriyim. ` +
+          `Şu an Eren Bey müsait olmadığı için aramanızı ben karşıladım; kendisi müsait olunca sizi arayacaktır. Acil bir notunuz varsa bana buradan iletebilirsiniz.`;
+
+      if (sock && callerJid) {
+        await sendVoiceNote(callerJid, voiceText).catch(() => {});
+        const textMsg =
+          `🎙️ *AVELON SESLİ SEKRETER YANITI*\n\n` +
+          `Merhabalar, ben Avelon 🤖 Yasin Eren Bey'in Yapay Zeka Yönetici Sekreteriyim.\n\n` +
+          `Şu an Eren Bey müsait olmadığı için aramanızı açamadı; **müsait olunca sizi arayacaktır.** Acil bir notunuz varsa bana yazabilirsiniz, kendisine hemen ileteceğim.`;
+        const sent = await sock.sendMessage(callerJid, { text: textMsg }).catch(() => null);
+        if (sent?.key?.id) botSentMsgIds.add(sent.key.id);
+      }
+
+      await notifyOwnerSelfChat(
+        `🛡️ *ARAMA MEŞGULE ATILDI & AVELON SEKRETER DEVREYE GİRDİ!* 🎙️\n\n` +
+          `👤 *Arayan:* ${current.callerName} (+${current.canonicalKey})\n` +
+          `🗣️ *Avelon:* Aramayı kapattı ve sesli sekreter mesajınızı iletti.`
+      );
+
+      return res.json({ ok: true, action: 'reject', callerName: current.callerName });
+    }
+
+    res.json({ ok: false, message: 'Geçersiz aksiyon' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Normal GSM / Şebeke Aramaları İçin Webhook (MacroDroid / Tasker / Kestirmeler Köprüsü)
+app.post('/api/incoming-gsm-call', async (req, res) => {
+  try {
+    const { callerNumber, callerName: rawName } = req.body || {};
+    const cleanNum = cleanNumber(String(callerNumber || ''));
+    const canonicalKey = getCanonicalKey(cleanNum) || cleanNum;
+    const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[cleanNum];
+    const callerName = rawName || entry?.name || (canonicalKey ? `+${canonicalKey}` : 'Bilinmeyen Numara');
+
+    globalThis.lastIncomingCall = {
+      callId: 'GSM-' + Date.now(),
+      callFrom: canonicalKey ? `${canonicalKey}@s.whatsapp.net` : '',
+      callerJid: canonicalKey ? `${canonicalKey}@s.whatsapp.net` : '',
+      canonicalKey,
+      rawNum: cleanNum,
+      callerName,
+      isKnown: Boolean(entry),
+      isVideo: false,
+      isGsm: true,
+      decision: null,
+      timestamp: Date.now(),
+    };
+
+    stateData.gemiTasks = stateData.gemiTasks || [];
+    stateData.gemiTasks.push({
+      id: 'GEMI-GSM-CALL-' + Date.now(),
+      prompt:
+        '__INCOMING_CALL__:' +
+        JSON.stringify({
+          callId: globalThis.lastIncomingCall.callId,
+          callFrom: globalThis.lastIncomingCall.callFrom,
+          callerName,
+          phone: canonicalKey,
+          isVideo: false,
+          isGsm: true,
+        }),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
+    saveData();
+
+    res.json({ ok: true, callerName });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
