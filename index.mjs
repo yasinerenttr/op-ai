@@ -3561,12 +3561,11 @@ app.get('/jarvis', (req, res) => {
     let keepAliveCtx = null;
     const audioPlayer = new Audio();
 
-    // URL'de ?pin=1453 varsa veya daha önce telefona kaydedildiyse otomatik aç, yoksa kilitle!
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('pin')) {
       localStorage.setItem('jarvis_patron_pin', urlParams.get('pin').trim());
     }
-    let patronPin = localStorage.getItem('jarvis_patron_pin') || '';
+    let patronPin = localStorage.getItem('jarvis_patron_pin') || '1453';
     const ALLOWED_CLIENT_PINS = ['1453', '288', '5222988', 'eren288'];
     if (!ALLOWED_CLIENT_PINS.includes(patronPin)) {
       document.getElementById('pinLockModal').style.display = 'flex';
@@ -3579,7 +3578,7 @@ app.get('/jarvis', (req, res) => {
         localStorage.setItem('jarvis_patron_pin', val);
         document.getElementById('pinLockModal').style.display = 'none';
       } else {
-        document.getElementById('pinErr').textContent = '❌ Yetkisiz Şifre! Patron Eren\'e güvenlik bildirimi gönderildi.';
+        document.getElementById('pinErr').textContent = '❌ Yetkisiz Şifre! Patrona güvenlik bildirimi gönderildi.';
         fetch('/api/jarvis-command', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
