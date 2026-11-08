@@ -240,6 +240,7 @@ let connectionStatus = 'starting';
 let connectedUser = null;
 const botSentMsgIds = new Set();
 const ownerActiveChats = {};
+const recentInboundMessages = [];
 const SCAM_FALLBACK_IMG = path.join(__dirname, 'scam_alert_card.png');
 
 stateData.appointments = stateData.appointments || {};
@@ -2890,6 +2891,9 @@ async function startWhatsApp() {
           if (sentFollow?.key?.id) botSentMsgIds.add(sentFollow.key.id);
         }
       } catch (err) {
+        if (typeof logItem === 'object' && logItem) {
+          logItem.decision = 'error:' + (err?.message || String(err));
+        }
         console.error('Mesaj işleme hatası:', err.message);
       }
     }
