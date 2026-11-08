@@ -2912,9 +2912,46 @@ async function startWhatsApp() {
   });
 }
 
-// ================= WEB KONTROL PANELİ (PORT 4040) =================
+// ================= WEB KONTROL PANELİ & SİBER KALKAN (PORT 4040) =================
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+
+const blockedIps = new Map();
+const failedPinAttempts = new Map();
+
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+
+  const rawIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  const blockUntil = blockedIps.get(rawIp);
+  if (blockUntil && Date.now() < blockUntil) {
+    return res.status(403).json({ ok: false, error: '🛡️ Avelon Siber Kalkan: IP adresiniz güvenlik nedeniyle engellendi.' });
+  }
+
+  const urlLow = String(req.originalUrl || req.url || '').toLowerCase();
+  if (
+    urlLow.includes('/.env') ||
+    urlLow.includes('/wp-admin') ||
+    urlLow.includes('/phpmyadmin') ||
+    urlLow.includes('/.git') ||
+    urlLow.includes('union%20select') ||
+    urlLow.includes('<script')
+  ) {
+    blockedIps.set(rawIp, Date.now() + 24 * 60 * 60 * 1000);
+    notifyOwnerSelfChat(
+      `🚨 *AVELON SİBER KALKAN ALARMI!* 🛡️\n\n` +
+        `🌐 *Saldırgan IP:* \`${rawIp}\`\n` +
+        `🎯 *Hedef:* \`${req.originalUrl}\`\n` +
+        `🔒 *Durum:* IP adresi otomatik olarak 24 saat kara listeye alındı ve engellendi!`,
+      '🛡️ Siber Saldırı Engellendi'
+    ).catch(() => {});
+    return res.status(403).send('Forbidden by Avelon Cyber Shield');
+  }
+  next();
+});
 
 app.get('/api/status', (req, res) => {
   const uniqueKnownPhones = new Set();
@@ -3430,14 +3467,72 @@ app.get('/api/jarvis-wake-audio', async (req, res) => {
 
 const VALID_JARVIS_PINS = new Set(['1453', '288', '5222988', 'eren288']);
 
+// 🎙️ EVRENSEL MİKROFON SES ÇÖZÜMLEYİCİ (APK WebView, iOS, Android, Chrome %100 Uyumlu)
+app.post('/api/jarvis-transcribe', async (req, res) => {
+  try {
+    const { audioBase64, pin } = req.body || {};
+    const clientPin = String(pin || req.headers['x-jarvis-pin'] || '').trim();
+    if (!VALID_JARVIS_PINS.has(clientPin)) {
+      return res.status(403).json({ ok: false, error: 'Yetkisiz erişim' });
+    }
+    if (!audioBase64) return res.json({ ok: true, transcript: '' });
+
+    const rawBuf = Buffer.from(String(audioBase64).replace(/^data:audio\/[^;]+;base64,/, ''), 'base64');
+    if (rawBuf.length < 400) return res.json({ ok: true, transcript: '' });
+
+    const tmpIn = `/tmp/jarvis_mic_${Date.now()}_${Math.floor(Math.random() * 9999)}.webm`;
+    const tmpFlac = `/tmp/jarvis_mic_${Date.now()}_${Math.floor(Math.random() * 9999)}.flac`;
+    let transcript = '';
+    try {
+      fs.writeFileSync(tmpIn, rawBuf);
+      const ffBin = ffmpegStatic && fs.existsSync(ffmpegStatic) ? ffmpegStatic : 'ffmpeg';
+      execSync(`"${ffBin}" -y -i "${tmpIn}" -af "volume=2.2" -ar 16000 -ac 1 -sample_fmt s16 "${tmpFlac}" 2>/dev/null`);
+      const flacBuf = fs.readFileSync(tmpFlac);
+      const gRes = await fetch(
+        'http://www.google.com/speech-api/v2/recognize?client=chromium&lang=tr-TR&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/x-flac; rate=16000' },
+          body: flacBuf,
+        }
+      );
+      const gTxt = await gRes.text();
+      for (const line of gTxt.split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const j = JSON.parse(line);
+          const alt = j?.result?.[0]?.alternative?.[0]?.transcript;
+          if (alt) {
+            transcript = alt.trim();
+            break;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {
+    } finally {
+      try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (_) {}
+      try { if (fs.existsSync(tmpFlac)) fs.unlinkSync(tmpFlac); } catch (_) {}
+    }
+
+    res.json({ ok: true, transcript });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/api/jarvis-command', async (req, res) => {
   try {
     const { text, alsoSendWhatsApp, pin } = req.body || {};
     const clientPin = String(pin || req.headers['x-jarvis-pin'] || '').trim();
     if (!VALID_JARVIS_PINS.has(clientPin)) {
-      const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'bilinmiyor';
+      const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'bilinmiyor').split(',')[0].trim();
+      const fails = (failedPinAttempts.get(ip) || 0) + 1;
+      failedPinAttempts.set(ip, fails);
+      if (fails >= 3) {
+        blockedIps.set(ip, Date.now() + 24 * 60 * 60 * 1000);
+      }
       notifyOwnerSelfChat(
-        `🚨 *GÜVENLİK UYARISI PATRON!*\nBirisi Avelon Jarvis sistemine yetkisiz şifreyle (\`${clientPin || 'şifresiz'}\`) girmeye çalıştı ve engellendi!\n🌐 *IP:* ${ip}`,
+        `🚨 *GÜVENLİK UYARISI PATRON!*\nBirisi Avelon Jarvis sistemine yetkisiz şifreyle (\`${clientPin || 'şifresiz'}\`) girmeye çalıştı (${fails}/3) ve engellendi!\n🌐 *IP:* ${ip}`,
         '🛡️ Avelon Güvenlik'
       ).catch(() => {});
       return res.status(403).json({ ok: false, error: 'Yetkisiz erişim! Sadece Patron Eren kullanabilir.' });
@@ -3714,7 +3809,7 @@ app.get('/jarvis', (req, res) => {
     if (urlParams.get('pin')) {
       localStorage.setItem('jarvis_patron_pin', urlParams.get('pin').trim());
     }
-    let patronPin = localStorage.getItem('jarvis_patron_pin') || '1453';
+    let patronPin = localStorage.getItem('jarvis_patron_pin') || '';
     const ALLOWED_CLIENT_PINS = ['1453', '288', '5222988', 'eren288'];
     if (!ALLOWED_CLIENT_PINS.includes(patronPin)) {
       document.getElementById('pinLockModal').style.display = 'flex';
@@ -4013,11 +4108,116 @@ app.get('/jarvis', (req, res) => {
       }
     }
 
+    let useFallbackRecorder = false;
+    let fallbackStream = null;
+    let fallbackRecorder = null;
+    let fallbackAudioChunks = [];
+    let fallbackVadTimer = null;
+
+    async function startUniversalMicRecorder() {
+      if (isSpeaking || !isListening) return;
+      try {
+        if (!fallbackStream) {
+          fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AC();
+        const src = ctx.createMediaStreamSource(fallbackStream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        src.connect(analyser);
+        const dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+        let speakingFrames = 0;
+        let silenceFrames = 0;
+        let isRecordingClip = false;
+
+        if (fallbackVadTimer) clearInterval(fallbackVadTimer);
+        fallbackVadTimer = setInterval(() => {
+          if (!isListening || isSpeaking || Date.now() < ignoreResultsUntil) {
+            if (isRecordingClip && fallbackRecorder && fallbackRecorder.state === 'recording') {
+              try { fallbackRecorder.stop(); } catch (_) {}
+              isRecordingClip = false;
+            }
+            return;
+          }
+          analyser.getByteTimeDomainData(dataArr);
+          let sum = 0;
+          for (let i = 0; i < dataArr.length; i++) {
+            const v = dataArr[i] - 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / dataArr.length);
+
+          if (!isRecordingClip) {
+            if (rms > 10) {
+              isRecordingClip = true;
+              speakingFrames = 1;
+              silenceFrames = 0;
+              fallbackAudioChunks = [];
+              try {
+                fallbackRecorder = new MediaRecorder(fallbackStream);
+                fallbackRecorder.ondataavailable = (ev) => {
+                  if (ev.data && ev.data.size > 0) fallbackAudioChunks.push(ev.data);
+                };
+                fallbackRecorder.onstop = async () => {
+                  if (isSpeaking || !fallbackAudioChunks.length) return;
+                  const blob = new Blob(fallbackAudioChunks, { type: fallbackRecorder.mimeType || 'audio/webm' });
+                  const reader = new FileReader();
+                  reader.onloadend = async () => {
+                    try {
+                      const b64 = reader.result;
+                      const r = await fetch('/api/jarvis-transcribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ audioBase64: b64, pin: patronPin || '1453' })
+                      });
+                      const d = await r.json();
+                      if (d && d.transcript) {
+                        handleSpokenPhrase(d.transcript);
+                      }
+                    } catch (_) {}
+                  };
+                  reader.readAsDataURL(blob);
+                };
+                fallbackRecorder.start();
+                document.getElementById('heardBox').textContent = '🎙️ Sesiniz algılanıyor...';
+              } catch (_) {
+                isRecordingClip = false;
+              }
+            }
+          } else {
+            speakingFrames++;
+            if (rms < 7) {
+              silenceFrames++;
+            } else {
+              silenceFrames = 0;
+            }
+            if (silenceFrames >= 7 || speakingFrames >= 42) {
+              isRecordingClip = false;
+              try {
+                if (fallbackRecorder && fallbackRecorder.state === 'recording') {
+                  fallbackRecorder.stop();
+                }
+              } catch (_) {}
+            }
+          }
+        }, 110);
+      } catch (err) {
+        document.getElementById('stateSub').textContent = 'Mikrofon izni gerekli: ' + err.message;
+      }
+    }
+
     function startSpeechRecognition() {
       if (isSpeaking || !isListening) return;
+      if (useFallbackRecorder) {
+        startUniversalMicRecorder();
+        return;
+      }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
-        document.getElementById('stateSub').textContent = 'Tarayıcınız canlı mikrofonu desteklemiyor, alttaki butonları kullanabilirsiniz.';
+        useFallbackRecorder = true;
+        startUniversalMicRecorder();
         return;
       }
       if (recognition) {
@@ -4030,7 +4230,7 @@ app.get('/jarvis', (req, res) => {
       }
       recognition = new SR();
       recognition.lang = 'tr-TR';
-      recognition.continuous = false; // Tek cümle yakalayıp anında işler, kendi sesini biriktirmez!
+      recognition.continuous = false;
       recognition.interimResults = false;
 
       recognition.onresult = (event) => {
@@ -4043,14 +4243,19 @@ app.get('/jarvis', (req, res) => {
       };
 
       recognition.onend = () => {
-        if (isListening && !isSpeaking) {
+        if (isListening && !isSpeaking && !useFallbackRecorder) {
           setTimeout(() => {
             if (isListening && !isSpeaking) startSpeechRecognition();
           }, 250);
         }
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (ev) => {
+        if (ev && (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'network')) {
+          useFallbackRecorder = true;
+          startUniversalMicRecorder();
+          return;
+        }
         if (isListening && !isSpeaking) {
           setTimeout(() => {
             if (isListening && !isSpeaking) startSpeechRecognition();
@@ -4058,7 +4263,12 @@ app.get('/jarvis', (req, res) => {
         }
       };
 
-      try { recognition.start(); } catch (_) {}
+      try {
+        recognition.start();
+      } catch (_) {
+        useFallbackRecorder = true;
+        startUniversalMicRecorder();
+      }
     }
 
     window.activeCallIdNow = null;

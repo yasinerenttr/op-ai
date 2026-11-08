@@ -88,65 +88,44 @@ async function searchAndOpenYouTube(query) {
   return { targetUrl, videoTitle };
 }
 
-async function listenOnceForCallDecision(maxSeconds = 8) {
+async function listenOnceForCallDecision(maxSeconds = 4) {
   const ffPath = fs.existsSync(FFMPEG_BIN) ? FFMPEG_BIN : 'ffmpeg';
-  const pyScript = `
-import subprocess, sys, audioop
-import speech_recognition as sr
-
-FFMPEG = ${JSON.stringify(ffPath)}
-cmd = [FFMPEG, "-loglevel", "quiet", "-f", "avfoundation", "-i", ":0", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"]
-proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=6400)
-
-r = sr.Recognizer()
-FRAME_BYTES = 6400
-speech_frames = []
-silent_count = 0
-max_frames = int(${maxSeconds} * 5)
-
-try:
-    for _ in range(max_frames):
-        frame = proc.stdout.read(FRAME_BYTES)
-        if not frame or len(frame) < FRAME_BYTES:
-            break
-        rms = audioop.rms(frame, 2)
-        if len(speech_frames) == 0:
-            if rms > 38:
-                speech_frames.append(frame)
-                silent_count = 0
-        else:
-            speech_frames.append(frame)
-            if rms < 32:
-                silent_count += 1
-            else:
-                silent_count = 0
-            if silent_count >= 4 or len(speech_frames) >= 25:
-                break
-finally:
-    try:
-        proc.terminate()
-    except Exception:
-        pass
-
-if len(speech_frames) > 0:
-    try:
-        pcm_data = b"".join(speech_frames)
-        boosted = audioop.mul(pcm_data, 2, 2.5)
-        audio_obj = sr.AudioData(boosted, 16000, 2)
-        txt = r.recognize_google(audio_obj, language="tr-TR")
-        if txt:
-            print(txt.strip(), flush=True)
-    except Exception:
-        pass
-`;
+  const tmpFlac = `/tmp/call_dec_${Date.now()}.flac`;
   try {
-    const heard = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-      encoding: 'utf-8',
-      timeout: (maxSeconds + 4) * 1000,
-    }).trim();
-    return heard;
-  } catch (_) {
+    execSync(
+      `"${ffPath}" -y -loglevel quiet -f avfoundation -i ":0" -t ${maxSeconds} -af "volume=3.5" -ar 16000 -ac 1 -sample_fmt s16 "${tmpFlac}"`,
+      { timeout: (maxSeconds + 4) * 1000 }
+    );
+    if (!fs.existsSync(tmpFlac)) return '';
+    const flacBuf = fs.readFileSync(tmpFlac);
+    const gRes = await fetch(
+      'http://www.google.com/speech-api/v2/recognize?client=chromium&lang=tr-TR&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/x-flac; rate=16000' },
+        body: flacBuf,
+      }
+    );
+    const gTxt = await gRes.text();
+    let out = '';
+    for (const line of gTxt.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const j = JSON.parse(line);
+        const alt = j?.result?.[0]?.alternative?.[0]?.transcript;
+        if (alt) {
+          out = alt.trim();
+          break;
+        }
+      } catch (_) {}
+    }
+    console.log('📞 ARAMA KARAR SESİ DUYULAN:', out);
+    return out;
+  } catch (e) {
+    console.error('listenOnceForCallDecision err:', e.message);
     return '';
+  } finally {
+    try { if (fs.existsSync(tmpFlac)) fs.unlinkSync(tmpFlac); } catch (_) {}
   }
 }
 
@@ -174,8 +153,8 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     // 1) Avelon sesli olarak sorar:
     await speakTextOnMac(`Efendim, şu an ${callerName} sizi ${callKind} arıyor. Açayım mı?`);
 
-    // 2) Sadece 8 saniyeliğine mikrofonu açıp Patron'un cevabını dinle ("Aç" veya "Kapat / Açma / Sen konuş")
-    const heard = await listenOnceForCallDecision(8);
+    // 2) Sadece 4 saniyeliğine mikrofonu açıp Patron'un cevabını dinle ("Aç" veya "Kapat / Açma / Sen konuş")
+    const heard = await listenOnceForCallDecision(4);
     const hLow = (heard || '').toLocaleLowerCase('tr-TR');
 
     if (
