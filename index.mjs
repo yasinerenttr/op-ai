@@ -1410,15 +1410,14 @@ async function startWhatsApp() {
     syncAuthInfoContactsAndLids();
   });
 
-  sock.ev.on('messaging-history.set', ({ contacts }) => {
-    syncAuthInfoContactsAndLids();
+  function applyWhatsAppContactsList(contacts) {
     let changed = false;
     if (Array.isArray(contacts)) {
       for (const c of contacts) {
         const idNum = cleanNumber(c?.id || '');
         const lidNum = cleanNumber(c?.lid || '');
         const phoneNum = cleanNumber(c?.phoneNumber || '');
-        const savedContactName = c?.name;
+        const savedContactName = c?.name; // Telefon rehberinde senin kaydettiğin isim!
         if (lidNum && phoneNum) {
           lidToPhone[lidNum] = phoneNum;
           phoneToLid[phoneNum] = lidNum;
@@ -1427,9 +1426,11 @@ async function startWhatsApp() {
           for (const k of [idNum, lidNum, phoneNum]) {
             if (k && !c?.id?.endsWith('@g.us')) {
               stateData.knownNumbers[k] = {
+                ...(stateData.knownNumbers[k] || {}),
                 name: savedContactName,
+                customName: true,
                 source: 'Rehber',
-                addedAt: new Date().toISOString(),
+                addedAt: stateData.knownNumbers[k]?.addedAt || new Date().toISOString(),
                 lastAutoReplyAt: stateData.knownNumbers[k]?.lastAutoReplyAt || 0,
               };
               changed = true;
@@ -1439,6 +1440,19 @@ async function startWhatsApp() {
       }
     }
     if (changed) saveData();
+  }
+
+  sock.ev.on('messaging-history.set', ({ contacts }) => {
+    syncAuthInfoContactsAndLids();
+    applyWhatsAppContactsList(contacts);
+  });
+
+  sock.ev.on('contacts.upsert', (contacts) => {
+    applyWhatsAppContactsList(contacts);
+  });
+
+  sock.ev.on('contacts.update', (contacts) => {
+    applyWhatsAppContactsList(contacts);
   });
 
   sock.ev.on('connection.update', async (update) => {
@@ -2557,7 +2571,11 @@ async function startWhatsApp() {
               lastAutoReplyAt: 0,
             });
 
-          if (msg.pushName && (!entry.name || entry.name.startsWith('Aktif Rehber') || entry.name.startsWith('Rehber'))) {
+          if (
+            msg.pushName &&
+            !entry.customName &&
+            (!entry.name || entry.name.startsWith('Aktif Rehber') || entry.name.startsWith('Rehber'))
+          ) {
             entry.name = msg.pushName;
           }
 
@@ -3195,17 +3213,74 @@ app.post('/api/settings', (req, res) => {
 
 app.post('/api/whitelist', (req, res) => {
   const { number, name } = req.body;
-  const clean = cleanNumber(number || '');
+  const clean = normalizeTRPhone(number || '');
   if (!clean) return res.status(400).json({ error: 'Geçersiz numara' });
   stateData.knownNumbers[clean] = {
+    ...(stateData.knownNumbers[clean] || {}),
     name: name || 'Manuel Eklendi',
+    customName: true,
     source: 'Manuel',
     addedAt: new Date().toISOString(),
     lastAutoReplyAt: 0,
   };
+  const mappedLid = phoneToLid[clean];
+  if (mappedLid) {
+    stateData.knownNumbers[mappedLid] = {
+      ...(stateData.knownNumbers[mappedLid] || {}),
+      name: name || 'Manuel Eklendi',
+      customName: true,
+      phone: clean,
+      source: 'Manuel',
+      addedAt: new Date().toISOString(),
+      lastAutoReplyAt: 0,
+    };
+  }
   delete stateData.strangerStages[clean];
   saveData();
   res.json({ ok: true });
+});
+
+// Telefondaki Gerçek Rehber İsimlerini (Babam, Annem, Kardeşim vb.) Tek Tıkla Avelon'a Aktarma Endpoint'i
+app.post('/api/sync-phone-contacts', (req, res) => {
+  try {
+    const { contacts } = req.body || {};
+    if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts dizisi gerekli' });
+    let count = 0;
+    for (const item of contacts) {
+      const savedName = Array.isArray(item.name) ? item.name[0] : item.name;
+      const tels = Array.isArray(item.tel) ? item.tel : [item.tel];
+      if (!savedName || !String(savedName).trim()) continue;
+      for (const rawTel of tels) {
+        const clean = normalizeTRPhone(String(rawTel || ''));
+        if (!clean || clean.length < 10) continue;
+        stateData.knownNumbers[clean] = {
+          ...(stateData.knownNumbers[clean] || {}),
+          name: String(savedName).trim(),
+          customName: true,
+          source: 'Telefon Rehberi (Özel İsim)',
+          addedAt: new Date().toISOString(),
+          lastAutoReplyAt: stateData.knownNumbers[clean]?.lastAutoReplyAt || 0,
+        };
+        const lid = phoneToLid[clean] || stateData.knownNumbers[clean]?.lid;
+        if (lid) {
+          stateData.knownNumbers[lid] = {
+            ...(stateData.knownNumbers[lid] || {}),
+            name: String(savedName).trim(),
+            customName: true,
+            phone: clean,
+            source: 'Telefon Rehberi (Özel İsim)',
+            addedAt: new Date().toISOString(),
+            lastAutoReplyAt: stateData.knownNumbers[lid]?.lastAutoReplyAt || 0,
+          };
+        }
+        count++;
+      }
+    }
+    saveData();
+    res.json({ ok: true, count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/block-toggle', async (req, res) => {
@@ -3547,8 +3622,12 @@ app.get('/jarvis', (req, res) => {
     <div class="heard-text" id="heardBox">👂 Duyulan: Bekleniyor...</div>
     <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim ve her soruna (gündelik hayat, bilim, sistem, Mac) anında cevap vereceğim.</div>
     <div class="quick-row">
-      <button class="q-btn" style="background:rgba(16,185,129,0.25);border-color:#10b981;color:#6ee7b7;" onclick="enablePocketMode()">🌙 Cep / Siyah Ekran Modu (Kapalı Gibi Dinle)</button>
-      <button class="q-btn" style="background:rgba(245,158,11,0.25);border-color:#f59e0b;color:#fde68a;" onclick="triggerTestCall()">📞 Gelen Arama Anons Testi</button>
+      <button class="q-btn" style="background:rgba(16,185,129,0.25);border-color:#10b981;color:#6ee7b7;" onclick="enablePocketMode()">🌙 Cep / Siyah Ekran Modu</button>
+      <button class="q-btn" style="background:rgba(245,158,11,0.25);border-color:#f59e0b;color:#fde68a;" onclick="triggerTestCall()">📞 Arama Anons Testi</button>
+    </div>
+    <div class="quick-row">
+      <button class="q-btn" style="background:rgba(56,189,248,0.25);border-color:#38bdf8;color:#bae6fd;" onclick="syncMyPhoneContacts()">📒 Rehber İsimlerimi Eşitle (Kayıtlı İsimler)</button>
+      <button class="q-btn" style="background:rgba(168,85,247,0.25);border-color:#a855f7;color:#e9d5ff;" onclick="openSimSetupModal()">📲 Gerçek SIM & Oto-Açma Kurulumu</button>
     </div>
     <div class="quick-row">
       <button class="q-btn" onclick="sendManual('Gündelik hayattan ilginç bir bilgi ver')">🧠 Gündelik Bilgi</button>
@@ -3982,8 +4061,54 @@ app.get('/jarvis', (req, res) => {
     async function triggerTestCall() {
       try {
         document.getElementById('replyBox').textContent = '📞 Gelen arama simülasyonu başlatılıyor...';
-        await fetch('/api/incoming-gsm-call?caller=05320000000&name=BTM%20Yat%C4%B1r%C4%B1mc%C4%B1%20Hatt%C4%B1');
+        await fetch('/api/incoming-gsm-call?caller=05054121081');
       } catch (_) {}
+    }
+
+    async function syncMyPhoneContacts() {
+      try {
+        if ('contacts' in navigator && 'ContactsManager' in window) {
+          const selected = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+          if (selected && selected.length > 0) {
+            const r = await fetch('/api/sync-phone-contacts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contacts: selected })
+            });
+            const d = await r.json();
+            document.getElementById('replyBox').textContent =
+              '✅ Rehberindeki ' + (d.count || selected.length) + ' numara senin kaydettiğin özel isimlerle (Babam, Annem vb.) Avelon hafızasına kaydedildi!';
+            return;
+          }
+        }
+        const num = prompt('Rehberde özel isim vermek istediğin numarayı yaz (Örn: 05054121081):', '05054121081');
+        if (!num) return;
+        const name = prompt('Bu numarayı Avelon nasıl anons etsin? (Örn: Babam):', 'Babam');
+        if (!name) return;
+        await fetch('/api/whitelist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number: num, name })
+        });
+        document.getElementById('replyBox').textContent =
+          '✅ ' + num + ' numarası artık "' + name + '" olarak kaydedildi! Aradığında "Efendim, şu an ' + name + ' sizi arıyor" diyecek.';
+      } catch (e) {
+        alert('Rehber eşitleme hatası: ' + e.message);
+      }
+    }
+
+    function openSimSetupModal() {
+      const url = 'https://avelon-wp-botavelon-wp-bot.onrender.com/api/incoming-gsm-call?caller={call_number}&name={call_name}';
+      if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      alert(
+        '📲 GERÇEK SIM ARAMASI + TELEFONDA SESLİ OKUMA + "EVET AÇ" İLE ARAMAYI AÇMA:\\n\\n' +
+        'Web tarayıcıları (Chrome) güvenlik nedeniyle SIM kartı ve yeşil "Aramayı Aç" tuşunu tek başına kontrol edemez. Bunu telefonunda yapmak için Play Store\\'dan ücretsiz "MacroDroid" uygulamasında 1 kural ekle:\\n\\n' +
+        '1️⃣ TETİKLEYİCİ (Trigger): Arama/SMS -> Gelen Arama (Tüm Numaralar)\\n' +
+        '2️⃣ EYLEM 1 (Telefonda Konuş): Metni Seslendir (Speak Text) -> "Efendim, şu an {call_name} sizi arıyor, açayım mı?"\\n' +
+        '3️⃣ EYLEM 2 (Avelon Köprüsü): HTTP İsteği (GET) -> (Panoya kopyalandı!)\\n' +
+        url + '\\n' +
+        '4️⃣ EYLEM 3 ("Aç" Deyince Aç): Aramayı Cevapla (Answer Call) + Hoparlör Açık!'
+      );
     }
 
     setInterval(async () => {
@@ -3995,10 +4120,18 @@ app.get('/jarvis', (req, res) => {
           document.getElementById('callModalName').textContent = d.callerName || 'Gelen Arama';
           document.getElementById('callModalSub').textContent = '🗣️ "' + (d.spokenAlert || 'Efendim, sizi arıyor, açayım mı?') + '"';
           document.getElementById('incomingCallModal').style.display = 'flex';
-          if (!window.announcedCallIds.has(d.callId) && d.audioBase64) {
-            window.announcedCallIds.add(d.callId);
-            activeWindowUntil = Date.now() + 60000;
-            await playBase64Mp3(d.audioBase64, d.spokenAlert);
+          if (!window.announcedCallIds.has(d.callId)) {
+            if (d.audioBase64) {
+              window.announcedCallIds.add(d.callId);
+              activeWindowUntil = Date.now() + 60000;
+              await playBase64Mp3(d.audioBase64, d.spokenAlert);
+            } else if (window.speechSynthesis && d.spokenAlert) {
+              window.announcedCallIds.add(d.callId);
+              activeWindowUntil = Date.now() + 60000;
+              const u = new SpeechSynthesisUtterance(d.spokenAlert);
+              u.lang = 'tr-TR';
+              window.speechSynthesis.speak(u);
+            }
           }
         } else if (window.activeCallIdNow) {
           window.activeCallIdNow = null;
