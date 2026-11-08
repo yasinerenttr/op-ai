@@ -83,11 +83,12 @@
       "lastAutoReplyAt": 0
     },
     "905522047861": {
-      "name": "Fatih",
+      "name": "Fatih Topalolmayan",
       "lid": "221869504479318",
       "source": "Telefon Rehberi",
       "addedAt": "2026-11-04T09:44:03.801Z",
-      "lastAutoReplyAt": 0
+      "lastAutoReplyAt": 0,
+      "customName": true
     },
     "221869504479318": {
       "name": "Aktif Rehber Kişisi",
@@ -125,18 +126,20 @@
       "lastAutoReplyAt": 0
     },
     "905368300861": {
-      "name": "Nejla Tatar",
+      "name": "Valide Sultan",
       "lid": "48640622121095",
       "source": "Telefon Rehberi",
       "addedAt": "2026-11-04T09:44:03.801Z",
-      "lastAutoReplyAt": 0
+      "lastAutoReplyAt": 0,
+      "customName": true
     },
     "48640622121095": {
-      "name": "Aktif Rehber Kişisi",
+      "name": "Valide Sultan",
       "phone": "905368300861",
       "source": "Telefon Rehberi",
       "addedAt": "2026-11-04T09:44:03.801Z",
-      "lastAutoReplyAt": 0
+      "lastAutoReplyAt": 0,
+      "customName": true
     },
     "905392738265": {
       "name": "Aktif Rehber Kişisi",
@@ -181,18 +184,20 @@
       "lastAutoReplyAt": 0
     },
     "905054121081": {
-      "name": "Turgut Tatar",
+      "name": "Babam Reis",
       "lid": "261211371397293",
       "source": "Telefon Rehberi",
       "addedAt": "2026-11-04T09:44:03.801Z",
-      "lastAutoReplyAt": 0
+      "lastAutoReplyAt": 0,
+      "customName": true
     },
     "261211371397293": {
-      "name": "Aktif Rehber Kişisi",
+      "name": "Babam Reis",
       "phone": "905054121081",
       "source": "Telefon Rehberi",
       "addedAt": "2026-11-04T09:44:03.801Z",
-      "lastAutoReplyAt": 0
+      "lastAutoReplyAt": 0,
+      "customName": true
     },
     "232581203255465": {
       "name": "Aktif Rehber Kişisi",
@@ -1118,5 +1123,31 @@
     }
   },
   "strangerStages": {},
-  "removedFromKnown": {}
+  "removedFromKnown": {},
+  "appointments": {},
+  "pendingOutreach": {},
+  "currentMode": "normal",
+  "mailAccounts": [
+    {
+      "email": "tataryasineren@gmail.com",
+      "pass": "ehtbpberbouurjtx",
+      "label": "Yasin Eren Kişisel Gmail"
+    },
+    {
+      "email": "neyyapsak@gmail.com",
+      "pass": "vvmvxohmokoklqet",
+      "label": "NeYapsak Resmi Mail"
+    },
+    {
+      "email": "qrestaurantdestek@gmail.com",
+      "pass": "hewppahaskfxessj",
+      "label": "QRes Destek Mail"
+    }
+  ],
+  "lastSeenMailUid": {
+    "tataryasineren@gmail.com": 4637,
+    "neyyapsak@gmail.com": 139,
+    "qrestaurantdestek@gmail.com": 89
+  },
+  "voiceProfile": "emel"
 }

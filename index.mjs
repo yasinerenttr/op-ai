@@ -36,13 +36,7 @@ if (!fs.existsSync(path.join(AUTH_DIR, 'creds.json')) && fs.existsSync(AUTH_SEED
   try {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
     execSync(`tar -xzf "${AUTH_SEED_ARCHIVE}" -C "${AUTH_DIR}"`);
-    // Eski konteynerden kalan bayat Signal session-*.json dosyalarını temizle ki yeni gelen mesajlarda Bad MAC hatası vermesin!
-    for (const f of fs.readdirSync(AUTH_DIR)) {
-      if (f.startsWith('session-') && f.endsWith('.json')) {
-        try { fs.unlinkSync(path.join(AUTH_DIR, f)); } catch (_) {}
-      }
-    }
-    console.log('☁️ Render Bulut Oturumu (auth_seed.tar.gz) başarıyla yüklendi ve Signal oturumları tazelendi!');
+    console.log('☁️ Render Bulut Oturumu (auth_seed.tar.gz) tüm Signal oturumlarıyla başarıyla yüklendi!');
   } catch (err) {
     console.error('Auth seed çıkarma hatası:', err.message);
   }
@@ -1487,6 +1481,11 @@ async function startWhatsApp() {
         name: sock.user?.name || 'Yasin Eren',
       };
       const synced = syncAuthInfoContactsAndLids();
+      try {
+        if (typeof sock.uploadPreKeys === 'function') {
+          await sock.uploadPreKeys();
+        }
+      } catch (_) {}
       console.log(`✅ Avelon WhatsApp'a Bağlandı: ${connectedUser.name} (+${connectedUser.id}) | Rehber: ${synced} kişi`);
     }
 
@@ -1559,20 +1558,43 @@ async function startWhatsApp() {
           continue;
         }
 
-        // KRİTİK DÜZELTME: İlk şifre çözme (CIPHERTEXT / Retry) aşamasında msg.message boş gelir!
-        // Eğer msgId'yi burada processedMsgIds'e eklersek 200ms sonra şifresi çözülüp gelen gerçek mesajı çöpe atar!
-        // Bu yüzden SADECE gerçek içerik (extractedText veya ses kaydı) varsa processedMsgIds'e ekle!
+        // KRİTİK DÜZELTME: İlk şifre çözme (CIPHERTEXT / Retry) aşamasında msg.message boş gelebilir!
+        // Eğer karşı taraftan gelen gerçek bir mesajda (!fromMe) CIPHERTEXT yüzünden metin boş geldiyse:
+        // 1.5 saniye bekle; bu sürede retry paketi gelip mesajı işlemediyse "[Yeni Mesaj]" olarak YİNE DE YANITLA!
         let extractedText = extractMessageText(msg.message);
         const innerAudio =
           msg.message?.ephemeralMessage?.message?.audioMessage ||
           msg.message?.viewOnceMessage?.message?.audioMessage ||
           msg.message?.audioMessage;
 
+        const msgId = msg.key?.id;
+        globalThis.debugUpsertLog = globalThis.debugUpsertLog || [];
+        globalThis.debugUpsertLog.push({
+          time: new Date().toISOString(),
+          type,
+          msgId,
+          remoteJid,
+          fromMe: Boolean(msg.key?.fromMe),
+          stubType: msg.messageStubType || null,
+          stubParams: msg.messageStubParameters || null,
+          hasMessage: Boolean(msg.message),
+          extractedText: extractedText || null,
+        });
+        if (globalThis.debugUpsertLog.length > 40) globalThis.debugUpsertLog.shift();
+
         if (!extractedText && !innerAudio) {
-          continue;
+          // Eğer başkası bize mesaj attıysa (!fromMe) ve CIPHERTEXT (stubType === 2) geldiyse:
+          if (!msg.key?.fromMe && (msg.messageStubType === 2 || type === 'notify')) {
+            await new Promise((r) => setTimeout(r, 1500));
+            if (msgId && processedMsgIds.has(msgId)) {
+              continue; // Retry paketi 1.5 sn içinde şifreyi çözüp zaten cevap verdi!
+            }
+            extractedText = '[Mesaj]';
+          } else {
+            continue;
+          }
         }
 
-        const msgId = msg.key?.id;
         if (msgId) {
           if (processedMsgIds.has(msgId)) continue;
           processedMsgIds.add(msgId);
@@ -4920,7 +4942,12 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, connectionStatus, uptime: process.uptime() });
+  res.status(200).json({
+    ok: true,
+    connectionStatus,
+    uptime: process.uptime(),
+    recentUpserts: (globalThis.debugUpsertLog || []).slice(-15),
+  });
 });
 
 const PORT = process.env.PORT || 4040;
