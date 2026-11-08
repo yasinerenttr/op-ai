@@ -2716,44 +2716,64 @@ async function startWhatsApp() {
   // 1) Mac'te Avelon hemen sesli olarak: "Efendim, [Kişi] sizi arıyor, açayım mı?" diye sorar!
   // 2) Patron "Kapat / Açma / Sen konuş" derse aramayı meşgule atar (sock.rejectCall) ve Avelon sesli sekreter olarak konuşur!
   const recentCallReplies = {};
+  const processedCallIds = new Set();
   sock.ev.on('call', async (calls) => {
-    if (!Array.isArray(calls)) return;
+    const callList = Array.isArray(calls) ? calls : [calls];
 
-    for (const call of calls) {
+    for (const call of callList) {
       try {
-        if (call.status !== 'offer' || call.isGroup) continue;
-        const callerJid = call.from || call.chatId;
+        if (!call || (call.status !== 'offer' && call.status !== 'ringing') || call.isGroup) continue;
+        if (call.id && processedCallIds.has(call.id)) continue;
+        if (call.id) processedCallIds.add(call.id);
+
+        const rawFrom = call.from || call.chatId || '';
+        const rawPn = call.callerPn || '';
+        const callerJid = rawPn || rawFrom;
         if (!callerJid || callerJid.endsWith('@g.us')) continue;
 
         const rawNum = cleanNumber(callerJid);
-        const canonicalKey = getCanonicalKey(rawNum);
-        if (!canonicalKey) continue;
-        if (connectedUser?.id && (canonicalKey === connectedUser.id || rawNum === connectedUser.id)) continue;
+        const lidNum = rawFrom.endsWith('@lid') ? cleanNumber(rawFrom) : '';
+        const pnNum = rawPn ? cleanNumber(rawPn) : '';
+        if (lidNum && pnNum && lidNum !== pnNum) {
+          lidToPhone[lidNum] = pnNum;
+          phoneToLid[pnNum] = lidNum;
+        }
 
-        if (recentCallReplies[canonicalKey] && Date.now() - recentCallReplies[canonicalKey] < 45 * 1000) {
+        const canonicalKey = pnNum || getCanonicalKey(rawNum) || rawNum;
+        if (!canonicalKey) continue;
+
+        if (recentCallReplies[canonicalKey] && Date.now() - recentCallReplies[canonicalKey] < 12 * 1000) {
           continue;
         }
         recentCallReplies[canonicalKey] = Date.now();
 
-        const isKnown = isKnownPerson(rawNum) || isKnownPerson(canonicalKey);
-        const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[rawNum];
-        const strangerEntry = stateData.strangerStages?.[canonicalKey] || stateData.strangerStages?.[rawNum];
+        const isKnown = isKnownPerson(rawNum) || isKnownPerson(canonicalKey) || (lidNum && isKnownPerson(lidNum));
+        const entry =
+          stateData.knownNumbers[canonicalKey] ||
+          stateData.knownNumbers[rawNum] ||
+          (lidNum ? stateData.knownNumbers[lidNum] : null);
+        const strangerEntry =
+          stateData.strangerStages?.[canonicalKey] ||
+          stateData.strangerStages?.[rawNum] ||
+          (lidNum ? stateData.strangerStages?.[lidNum] : null);
         const formattedPhone = canonicalKey.startsWith('90')
           ? `0${canonicalKey.slice(2, 5)} ${canonicalKey.slice(5, 8)} ${canonicalKey.slice(8, 10)} ${canonicalKey.slice(10)}`
           : `+${canonicalKey}`;
+        const rawEntryName =
+          entry?.name && entry.name !== 'Aktif Rehber Kişisi' ? entry.name : null;
         const callerName =
-          entry?.name ||
+          rawEntryName ||
           (strangerEntry?.pushName && strangerEntry.pushName !== 'Arayan Numara' ? strangerEntry.pushName : null) ||
-          `Kayıtsız Numara (${formattedPhone})`;
+          (isKnown ? `Rehberdeki Kişiniz (${formattedPhone})` : `Kayıtsız Numara (${formattedPhone})`);
 
         const callTypeLabel = call.isVideo ? 'görüntülü aramanızı' : 'sesli aramanızı';
 
         const spokenAlert = `Efendim, şu an ${callerName} sizi ${call.isVideo ? 'görüntülü olarak ' : ''}arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?`;
 
         globalThis.lastIncomingCall = {
-          callId: call.id,
-          callFrom: callerJid,
-          callerJid,
+          callId: call.id || 'CALL-' + Date.now(),
+          callFrom: rawFrom || callerJid,
+          callerJid: pnNum ? `${pnNum}@s.whatsapp.net` : callerJid,
           canonicalKey,
           rawNum,
           callerName,
@@ -2766,10 +2786,29 @@ async function startWhatsApp() {
           timestamp: Date.now(),
         };
 
+        // 1) Mac'teki Avelon'a ANINDA sesli anons görevi gönder ("Efendim, şu kişi sizi arıyor, açayım mı?")
+        stateData.gemiTasks = stateData.gemiTasks || [];
+        stateData.gemiTasks.push({
+          id: 'GEMI-CALL-' + Date.now(),
+          prompt:
+            '__INCOMING_CALL__:' +
+            JSON.stringify({
+              callId: globalThis.lastIncomingCall.callId,
+              callFrom: globalThis.lastIncomingCall.callFrom,
+              callerName,
+              phone: canonicalKey,
+              isVideo: Boolean(call.isVideo),
+              isKnown,
+            }),
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+        saveData();
+
         // Telefon (/jarvis) için ses dosyasını hazırla + WhatsApp "Siz" sohbetine de sesli anons at
         generateNeuralMp3Buffer(spokenAlert)
           .then(({ fullMp3 }) => {
-            if (fullMp3 && globalThis.lastIncomingCall?.callId === call.id) {
+            if (fullMp3 && globalThis.lastIncomingCall?.callId === (call.id || globalThis.lastIncomingCall?.callId)) {
               globalThis.lastIncomingCall.audioBase64 = fullMp3.toString('base64');
             }
           })
@@ -2780,25 +2819,6 @@ async function startWhatsApp() {
           `🗣️ "Efendim, ${callerName} sizi arıyor, açayım mı?" (.kapat yazarsanız Avelon meşgule atıp konuşur)`,
           { type: 'incoming_call', callerName, phone: canonicalKey }
         ).catch(() => {});
-
-        // 1) Mac'teki Avelon'a ANINDA sesli anons görevi gönder ("Efendim, şu kişi sizi arıyor, açayım mı?")
-        stateData.gemiTasks = stateData.gemiTasks || [];
-        stateData.gemiTasks.push({
-          id: 'GEMI-CALL-' + Date.now(),
-          prompt:
-            '__INCOMING_CALL__:' +
-            JSON.stringify({
-              callId: call.id,
-              callFrom: callerJid,
-              callerName,
-              phone: canonicalKey,
-              isVideo: Boolean(call.isVideo),
-              isKnown,
-            }),
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        });
-        saveData();
 
         // 2) Patron'un "Siz" sohbetine anlık bildirim at
         notifyOwnerSelfChat(
@@ -3022,17 +3042,27 @@ app.post('/api/call-action', async (req, res) => {
   }
 });
 
-// Normal GSM / Şebeke Aramaları İçin Webhook (MacroDroid / Tasker / Kestirmeler Köprüsü)
-app.post('/api/incoming-gsm-call', async (req, res) => {
+// Normal GSM / Şebeke Aramaları İçin Webhook (MacroDroid / Tasker / Kestirmeler Köprüsü - GET ve POST destekler)
+app.all('/api/incoming-gsm-call', async (req, res) => {
   try {
-    const { callerNumber, callerName: rawName } = req.body || {};
-    const cleanNum = cleanNumber(String(callerNumber || ''));
+    const src = { ...(req.query || {}), ...(req.body || {}) };
+    const callerNumber = src.callerNumber || src.caller || src.number || src.phone || '';
+    const rawName = src.callerName || src.name || '';
+    const cleanNum = normalizeTRPhone(String(callerNumber || ''));
     const canonicalKey = getCanonicalKey(cleanNum) || cleanNum;
     const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[cleanNum];
-    const callerName = rawName || entry?.name || (canonicalKey ? `+${canonicalKey}` : 'Bilinmeyen Numara');
+    const cleanRawName =
+      rawName && !String(rawName).includes('{') && String(rawName).trim() ? String(rawName).trim() : '';
+    const callerName =
+      cleanRawName ||
+      (entry?.name && entry.name !== 'Aktif Rehber Kişisi' ? entry.name : null) ||
+      (canonicalKey ? `+${canonicalKey}` : 'Bilinmeyen Numara');
+
+    const callId = 'GSM-' + Date.now();
+    const spokenAlert = `Efendim, şu an ${callerName} sizi normal hattan arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?`;
 
     globalThis.lastIncomingCall = {
-      callId: 'GSM-' + Date.now(),
+      callId,
       callFrom: canonicalKey ? `${canonicalKey}@s.whatsapp.net` : '',
       callerJid: canonicalKey ? `${canonicalKey}@s.whatsapp.net` : '',
       canonicalKey,
@@ -3041,6 +3071,8 @@ app.post('/api/incoming-gsm-call', async (req, res) => {
       isKnown: Boolean(entry),
       isVideo: false,
       isGsm: true,
+      spokenAlert,
+      audioBase64: null,
       decision: null,
       timestamp: Date.now(),
     };
@@ -3051,7 +3083,7 @@ app.post('/api/incoming-gsm-call', async (req, res) => {
       prompt:
         '__INCOMING_CALL__:' +
         JSON.stringify({
-          callId: globalThis.lastIncomingCall.callId,
+          callId,
           callFrom: globalThis.lastIncomingCall.callFrom,
           callerName,
           phone: canonicalKey,
@@ -3063,7 +3095,22 @@ app.post('/api/incoming-gsm-call', async (req, res) => {
     });
     saveData();
 
-    res.json({ ok: true, callerName });
+    generateNeuralMp3Buffer(spokenAlert)
+      .then(({ fullMp3 }) => {
+        if (fullMp3 && globalThis.lastIncomingCall?.callId === callId) {
+          globalThis.lastIncomingCall.audioBase64 = fullMp3.toString('base64');
+        }
+      })
+      .catch(() => {});
+
+    sendVoiceNote('905525222988@s.whatsapp.net', spokenAlert).catch(() => {});
+    notifyOwnerSelfChat(
+      `📞 *GELEN ŞEBEKE (GSM) ARAMASI ALGILANDI!* 🚨\n\n` +
+        `👤 *Arayan:* *${callerName}* ${canonicalKey ? `(+${canonicalKey})` : ''}\n` +
+        `🗣️ *Avelon:* _"${spokenAlert}"_`
+    ).catch(() => {});
+
+    res.json({ ok: true, callId, callerName, spokenAlert });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3501,6 +3548,7 @@ app.get('/jarvis', (req, res) => {
     <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim ve her soruna (gündelik hayat, bilim, sistem, Mac) anında cevap vereceğim.</div>
     <div class="quick-row">
       <button class="q-btn" style="background:rgba(16,185,129,0.25);border-color:#10b981;color:#6ee7b7;" onclick="enablePocketMode()">🌙 Cep / Siyah Ekran Modu (Kapalı Gibi Dinle)</button>
+      <button class="q-btn" style="background:rgba(245,158,11,0.25);border-color:#f59e0b;color:#fde68a;" onclick="triggerTestCall()">📞 Gelen Arama Anons Testi</button>
     </div>
     <div class="quick-row">
       <button class="q-btn" onclick="sendManual('Gündelik hayattan ilginç bir bilgi ver')">🧠 Gündelik Bilgi</button>
@@ -3715,8 +3763,32 @@ app.get('/jarvis', (req, res) => {
 
         audioPlayer.src = 'data:audio/mp3;base64,' + b64;
         audioPlayer.onended = finishPlayback;
-        audioPlayer.onerror = finishPlayback;
-        audioPlayer.play().catch(finishPlayback);
+        audioPlayer.onerror = () => {
+          if (spokenTextForEchoFilter && window.speechSynthesis) {
+            try {
+              const u = new SpeechSynthesisUtterance(spokenTextForEchoFilter);
+              u.lang = 'tr-TR';
+              u.onend = finishPlayback;
+              u.onerror = finishPlayback;
+              window.speechSynthesis.speak(u);
+              return;
+            } catch (_) {}
+          }
+          finishPlayback();
+        };
+        audioPlayer.play().catch(() => {
+          if (spokenTextForEchoFilter && window.speechSynthesis) {
+            try {
+              const u = new SpeechSynthesisUtterance(spokenTextForEchoFilter);
+              u.lang = 'tr-TR';
+              u.onend = finishPlayback;
+              u.onerror = finishPlayback;
+              window.speechSynthesis.speak(u);
+              return;
+            } catch (_) {}
+          }
+          finishPlayback();
+        });
       });
     }
 
@@ -3907,6 +3979,13 @@ app.get('/jarvis', (req, res) => {
       } catch (_) {}
     }
 
+    async function triggerTestCall() {
+      try {
+        document.getElementById('replyBox').textContent = '📞 Gelen arama simülasyonu başlatılıyor...';
+        await fetch('/api/incoming-gsm-call?caller=05320000000&name=BTM%20Yat%C4%B1r%C4%B1mc%C4%B1%20Hatt%C4%B1');
+      } catch (_) {}
+    }
+
     setInterval(async () => {
       try {
         const r = await fetch('/api/incoming-call-poll');
@@ -3926,7 +4005,7 @@ app.get('/jarvis', (req, res) => {
           document.getElementById('incomingCallModal').style.display = 'none';
         }
       } catch (_) {}
-    }, 2000);
+    }, 1500);
   </script>
 </body>
 </html>`);
