@@ -36,7 +36,13 @@ if (!fs.existsSync(path.join(AUTH_DIR, 'creds.json')) && fs.existsSync(AUTH_SEED
   try {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
     execSync(`tar -xzf "${AUTH_SEED_ARCHIVE}" -C "${AUTH_DIR}"`);
-    console.log('☁️ Render Bulut Oturumu (auth_seed.tar.gz) başarıyla yüklendi!');
+    // Eski konteynerden kalan bayat Signal session-*.json dosyalarını temizle ki yeni gelen mesajlarda Bad MAC hatası vermesin!
+    for (const f of fs.readdirSync(AUTH_DIR)) {
+      if (f.startsWith('session-') && f.endsWith('.json')) {
+        try { fs.unlinkSync(path.join(AUTH_DIR, f)); } catch (_) {}
+      }
+    }
+    console.log('☁️ Render Bulut Oturumu (auth_seed.tar.gz) başarıyla yüklendi ve Signal oturumları tazelendi!');
   } catch (err) {
     console.error('Auth seed çıkarma hatası:', err.message);
   }
@@ -1406,6 +1412,7 @@ async function startWhatsApp() {
     printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: false,
+    enableAutoSessionRecreation: true,
     keepAliveIntervalMs: 20000,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
@@ -1533,25 +1540,12 @@ async function startWhatsApp() {
 
     for (const msg of messages) {
       try {
-        const msgId = msg.key?.id;
-        if (msgId) {
-          if (processedMsgIds.has(msgId)) continue;
-          processedMsgIds.add(msgId);
-        }
-
-        // 'append' tipindeyse sadece son 25 saniye içinde atılmış taze mesajları işle (eski geçmiş senkronunu atla)
-        const tsSec = Number(msg.messageTimestamp?.low || msg.messageTimestamp || 0);
-        if (type === 'append' && tsSec > 0 && Math.abs(Date.now() / 1000 - tsSec) > 25) {
-          continue;
-        }
-
         const remoteJid = msg.key?.remoteJid;
         if (!remoteJid) continue;
 
         // 1) KESİN GRUP, KANAL VE DURUM ENGELİ (Gruplara asla cevap vermez)
         if (
           remoteJid.endsWith('@g.us') ||
-          Boolean(msg.key?.participant) ||
           remoteJid === 'status@broadcast' ||
           remoteJid.endsWith('@newsletter') ||
           remoteJid.endsWith('@broadcast')
@@ -1559,8 +1553,33 @@ async function startWhatsApp() {
           continue;
         }
 
+        // 'append' tipindeyse sadece son 45 saniye içinde atılmış taze mesajları işle (eski geçmiş senkronunu atla)
+        const tsSec = Number(msg.messageTimestamp?.low || msg.messageTimestamp || 0);
+        if (type === 'append' && tsSec > 0 && Math.abs(Date.now() / 1000 - tsSec) > 45) {
+          continue;
+        }
+
+        // KRİTİK DÜZELTME: İlk şifre çözme (CIPHERTEXT / Retry) aşamasında msg.message boş gelir!
+        // Eğer msgId'yi burada processedMsgIds'e eklersek 200ms sonra şifresi çözülüp gelen gerçek mesajı çöpe atar!
+        // Bu yüzden SADECE gerçek içerik (extractedText veya ses kaydı) varsa processedMsgIds'e ekle!
+        let extractedText = extractMessageText(msg.message);
+        const innerAudio =
+          msg.message?.ephemeralMessage?.message?.audioMessage ||
+          msg.message?.viewOnceMessage?.message?.audioMessage ||
+          msg.message?.audioMessage;
+
+        if (!extractedText && !innerAudio) {
+          continue;
+        }
+
+        const msgId = msg.key?.id;
+        if (msgId) {
+          if (processedMsgIds.has(msgId)) continue;
+          processedMsgIds.add(msgId);
+        }
+
         const rawNum = cleanNumber(remoteJid);
-        const altJid = msg.key?.remoteJidAlt || msg.key?.senderPn || '';
+        const altJid = msg.key?.remoteJidAlt || msg.key?.senderPn || msg.key?.participantAlt || msg.key?.participant || '';
         const altNum = cleanNumber(altJid);
         if (rawNum && altNum && rawNum !== altNum) {
           if (remoteJid.endsWith('@lid')) {
@@ -1574,7 +1593,6 @@ async function startWhatsApp() {
 
         const canonicalKey = getCanonicalKey(rawNum);
         if (!canonicalKey) continue;
-        let extractedText = extractMessageText(msg.message);
         const isSelfChat =
           (connectedUser?.id && (canonicalKey === connectedUser.id || rawNum === connectedUser.id)) ||
           canonicalKey === '905525222988' ||
