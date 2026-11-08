@@ -2766,10 +2766,19 @@ async function startWhatsApp() {
         recentCallReplies[canonicalKey] = Date.now();
 
         const isKnown = isKnownPerson(rawNum) || isKnownPerson(canonicalKey) || (lidNum && isKnownPerson(lidNum));
-        const entry =
+        const last10 = canonicalKey.length >= 10 ? canonicalKey.slice(-10) : '';
+        let entry =
           stateData.knownNumbers[canonicalKey] ||
           stateData.knownNumbers[rawNum] ||
           (lidNum ? stateData.knownNumbers[lidNum] : null);
+        if ((!entry || !entry.name || entry.name === 'Aktif Rehber Kişisi') && last10) {
+          for (const [k, v] of Object.entries(stateData.knownNumbers || {})) {
+            if (k.endsWith(last10) && v?.name && v.name !== 'Aktif Rehber Kişisi') {
+              entry = v;
+              break;
+            }
+          }
+        }
         const strangerEntry =
           stateData.strangerStages?.[canonicalKey] ||
           stateData.strangerStages?.[rawNum] ||
@@ -3119,7 +3128,7 @@ app.post('/api/call-action', async (req, res) => {
   }
 });
 
-// Normal GSM / Şebeke Aramaları İçin Webhook (MacroDroid / Tasker / Kestirmeler Köprüsü - GET ve POST destekler)
+// Normal GSM / Şebeke Aramaları İçin Webhook (AvelonJarvis.apk & Otomasyon Köprüsü - GET ve POST destekler)
 app.all('/api/incoming-gsm-call', async (req, res) => {
   try {
     const src = { ...(req.query || {}), ...(req.body || {}) };
@@ -3127,13 +3136,28 @@ app.all('/api/incoming-gsm-call', async (req, res) => {
     const rawName = src.callerName || src.name || '';
     const cleanNum = normalizeTRPhone(String(callerNumber || ''));
     const canonicalKey = getCanonicalKey(cleanNum) || cleanNum;
-    const entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[cleanNum];
+    const last10 = canonicalKey.length >= 10 ? canonicalKey.slice(-10) : '';
+    let entry = stateData.knownNumbers[canonicalKey] || stateData.knownNumbers[cleanNum];
+    if (!entry && last10) {
+      for (const [k, v] of Object.entries(stateData.knownNumbers || {})) {
+        if (k.endsWith(last10) && v?.name && v.name !== 'Aktif Rehber Kişisi') {
+          entry = v;
+          break;
+        }
+      }
+    }
+    const trimmedRaw = rawName && !String(rawName).includes('{') ? String(rawName).trim() : '';
     const cleanRawName =
-      rawName && !String(rawName).includes('{') && String(rawName).trim() ? String(rawName).trim() : '';
+      trimmedRaw &&
+      trimmedRaw !== 'Bilinmeyen Numara' &&
+      trimmedRaw !== 'Rehber Dışı Numara' &&
+      trimmedRaw !== callerNumber
+        ? trimmedRaw
+        : '';
     const callerName =
       cleanRawName ||
       (entry?.name && entry.name !== 'Aktif Rehber Kişisi' ? entry.name : null) ||
-      (canonicalKey ? `+${canonicalKey}` : 'Bilinmeyen Numara');
+      (canonicalKey ? `0${canonicalKey.replace(/^90/, '')}` : 'Rehber Dışı Numara');
 
     const callId = 'GSM-' + Date.now();
     const spokenAlert = `Efendim, şu an ${callerName} sizi normal hattan arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?`;

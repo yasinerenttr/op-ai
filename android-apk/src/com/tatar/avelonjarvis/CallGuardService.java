@@ -16,6 +16,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.provider.CallLog;
 import android.provider.ContactsContract;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
@@ -38,7 +39,9 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CallGuardService extends Service implements TextToSpeech.OnInitListener {
     private static final String CHANNEL_ID = "avelon_jarvis_guard";
@@ -51,8 +54,9 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
     private PhoneStateListener phoneStateListener;
     private Set<String> announcedCallIds = new HashSet<>();
     private Set<String> executedDecisionCallIds = new HashSet<>();
-    private long lastSimRingTime = 0;
-    private String lastSimRingNumber = "";
+    private Map<String, String> last10ToNameMap = new ConcurrentHashMap<>();
+    private long lastSimAnnounceTime = 0;
+    private Runnable pendingEmptyNumberTask = null;
     private int savedRingVolume = -1;
     private boolean pollRunning = false;
 
@@ -140,8 +144,12 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
                     @Override
                     public void onCallStateChanged(int state, String phoneNumber) {
                         if (state == TelephonyManager.CALL_STATE_RINGING) {
-                            handleIncomingSimCall(phoneNumber);
+                            onSimRingingEvent(phoneNumber);
                         } else if (state == TelephonyManager.CALL_STATE_IDLE || state == TelephonyManager.CALL_STATE_OFFHOOK) {
+                            if (pendingEmptyNumberTask != null) {
+                                mainHandler.removeCallbacks(pendingEmptyNumberTask);
+                                pendingEmptyNumberTask = null;
+                            }
                             restoreRingVolume();
                         }
                     }
@@ -157,7 +165,7 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
             String callState = intent.getStringExtra("call_state");
             String incomingNum = intent.getStringExtra("incoming_number");
             if (TelephonyManager.EXTRA_STATE_RINGING.equals(callState)) {
-                handleIncomingSimCall(incomingNum);
+                onSimRingingEvent(incomingNum);
             } else if ("SYNC_CONTACTS".equals(intent.getStringExtra("cmd"))) {
                 syncContactsToCloudAsync();
             }
@@ -165,22 +173,67 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
         return START_STICKY;
     }
 
-    private synchronized void handleIncomingSimCall(String rawNumber) {
-        long now = System.currentTimeMillis();
+    private synchronized void onSimRingingEvent(String rawNumber) {
         String num = rawNumber != null ? rawNumber.trim() : "";
-        if (now - lastSimRingTime < 3000 && (num.isEmpty() || num.equals(lastSimRingNumber))) {
-            return;
+        // Android 9+ ilk yayında numarayı boş gönderip 100ms sonra gerçek numarayı gönderir!
+        if (!num.isEmpty()) {
+            if (pendingEmptyNumberTask != null) {
+                mainHandler.removeCallbacks(pendingEmptyNumberTask);
+                pendingEmptyNumberTask = null;
+            }
+            announceSimCallNow(num);
+        } else {
+            if (pendingEmptyNumberTask == null && System.currentTimeMillis() - lastSimAnnounceTime > 8000) {
+                pendingEmptyNumberTask = () -> {
+                    pendingEmptyNumberTask = null;
+                    String fromCallLog = getLatestRingingNumberFromCallLog();
+                    announceSimCallNow(fromCallLog != null ? fromCallLog : "");
+                };
+                mainHandler.postDelayed(pendingEmptyNumberTask, 750);
+            }
         }
-        if (now - lastSimRingTime < 8000 && !lastSimRingNumber.isEmpty() && num.isEmpty()) {
-            return;
-        }
-        lastSimRingTime = now;
-        if (!num.isEmpty()) lastSimRingNumber = num;
+    }
 
+    private String getLatestRingingNumberFromCallLog() {
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(
+                    CallLog.Calls.CONTENT_URI,
+                    new String[]{CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.DATE},
+                    null, null,
+                    CallLog.Calls.DATE + " DESC"
+            );
+            if (c != null && c.moveToFirst()) {
+                long date = c.getLong(2);
+                if (System.currentTimeMillis() - date < 15000) {
+                    String num = c.getString(0);
+                    String cachedName = c.getString(1);
+                    if (cachedName != null && !cachedName.trim().isEmpty() && num != null) {
+                        String l10 = extractLast10Digits(num);
+                        if (!l10.isEmpty()) last10ToNameMap.put(l10, cachedName.trim());
+                    }
+                    return num;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return null;
+    }
+
+    private synchronized void announceSimCallNow(String rawNumber) {
+        long now = System.currentTimeMillis();
+        if (now - lastSimAnnounceTime < 8000) {
+            return;
+        }
+        lastSimAnnounceTime = now;
+
+        String num = rawNumber != null ? rawNumber.trim() : "";
         String savedName = lookupContactName(num);
         final String displayCaller = (savedName != null && !savedName.isEmpty())
                 ? savedName
-                : (!num.isEmpty() ? num : "Bilinmeyen Numara");
+                : (!num.isEmpty() ? num : "Rehber Dışı Numara");
 
         final String spoken = "Efendim, şu an " + displayCaller + " sizi arıyor. Açayım mı, yoksa sekreter olarak ben mi konuşayım?";
         speakOverRingtone(spoken, "CALL_ASK_" + now);
@@ -200,8 +253,25 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
         }).start();
     }
 
+    private String extractLast10Digits(String raw) {
+        if (raw == null) return "";
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.length() >= 10) {
+            return digits.substring(digits.length() - 10);
+        }
+        return digits;
+    }
+
     private String lookupContactName(String phoneNumber) {
         if (phoneNumber == null || phoneNumber.trim().isEmpty()) return null;
+
+        // 1) Önce hafızadaki Son 10 Hane (5xxxxxxxxx) tablosuna bak (En hızlı ve %100 kesin eşleşme)
+        String l10 = extractLast10Digits(phoneNumber);
+        if (!l10.isEmpty() && last10ToNameMap.containsKey(l10)) {
+            return last10ToNameMap.get(l10);
+        }
+
+        // 2) PhoneLookup URI ile Android Rehberine sor
         Cursor cursor = null;
         try {
             Uri uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber));
@@ -211,11 +281,46 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
                     null, null, null
             );
             if (cursor != null && cursor.moveToFirst()) {
-                return cursor.getString(0);
+                String found = cursor.getString(0);
+                if (found != null && !found.trim().isEmpty()) {
+                    if (!l10.isEmpty()) last10ToNameMap.put(l10, found.trim());
+                    return found.trim();
+                }
             }
         } catch (Exception ignored) {
         } finally {
             if (cursor != null) cursor.close();
+        }
+
+        // 3) Tüm rehber numaralarında son 10 haneyi tara
+        if (!l10.isEmpty()) {
+            Cursor c2 = null;
+            try {
+                c2 = getContentResolver().query(
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        new String[]{
+                                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                                ContactsContract.CommonDataKinds.Phone.NUMBER
+                        },
+                        null, null, null
+                );
+                if (c2 != null) {
+                    while (c2.moveToNext()) {
+                        String cName = c2.getString(0);
+                        String cNum = c2.getString(1);
+                        String c10 = extractLast10Digits(cNum);
+                        if (!c10.isEmpty() && cName != null && !cName.trim().isEmpty()) {
+                            last10ToNameMap.put(c10, cName.trim());
+                        }
+                    }
+                    if (last10ToNameMap.containsKey(l10)) {
+                        return last10ToNameMap.get(l10);
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (c2 != null) c2.close();
+            }
         }
         return null;
     }
@@ -423,6 +528,10 @@ public class CallGuardService extends Service implements TextToSpeech.OnInitList
                     String name = cursor.getString(0);
                     String num = cursor.getString(1);
                     if (name != null && num != null && !name.trim().isEmpty() && !num.trim().isEmpty()) {
+                        String l10 = extractLast10Digits(num);
+                        if (!l10.isEmpty()) {
+                            last10ToNameMap.put(l10, name.trim());
+                        }
                         JSONObject item = new JSONObject();
                         item.put("name", name.trim());
                         item.put("tel", num.trim());
