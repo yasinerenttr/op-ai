@@ -3560,8 +3560,24 @@ app.post('/api/jarvis-command', async (req, res) => {
   }
 });
 
-// 🦾 AVELON JARVIS — TONY STARK CANLI TELEFON & MASAÜSTÜ SESLİ KOMUTA EKRANI (/jarvis)
+// 🦾 AVELON JARVIS — SADECE ÖZEL APK İÇİNDEN ERİŞİLEBİLEN KOMUTA EKRANI (/jarvis)
 app.get('/jarvis', (req, res) => {
+  const ua = String(req.headers['user-agent'] || '');
+  const isOfficialApk = ua.includes('TatarAvelonAPK/2026_x99_secret') || req.query.apk === 'tatar_x99';
+  if (!isOfficialApk) {
+    return res.status(403).send(`<!DOCTYPE html>
+<html lang="tr">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Erişim Engellendi</title></head>
+<body style="background:#040711;color:#f8fafc;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px;margin:0;">
+  <div style="font-size:64px;margin-bottom:14px;">🛡️🔒</div>
+  <h2 style="color:#38bdf8;margin:0 0 10px 0;">TATAR ENDÜSTRİ SİBER KALKANI</h2>
+  <p style="color:#94a3b8;max-width:360px;line-height:1.5;font-size:14px;">
+    Bu web sayfası güvenlik amacıyla dış tarayıcı erişimine <b>tamamen kapatılmıştır</b>.<br/><br/>
+    Sadece <b>Patron Yasin Eren Tatar</b> özel imzalı <b>AvelonJarvis.apk</b> mobil uygulaması üzerinden erişilebilir.
+  </p>
+</body>
+</html>`);
+  }
   res.send(`<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -3893,6 +3909,9 @@ app.get('/jarvis', (req, res) => {
     function killMicForPlayback() {
       isSpeaking = true;
       ignoreResultsUntil = Date.now() + 60000;
+      if (window.AndroidJarvis && window.AndroidJarvis.stopListening) {
+        try { window.AndroidJarvis.stopListening(); } catch (_) {}
+      }
       if (recognition) {
         try {
           recognition.onresult = null;
@@ -4210,6 +4229,12 @@ app.get('/jarvis', (req, res) => {
 
     function startSpeechRecognition() {
       if (isSpeaking || !isListening) return;
+      if (window.AndroidJarvis && window.AndroidJarvis.startListening) {
+        try {
+          window.AndroidJarvis.startListening();
+          return;
+        } catch (_) {}
+      }
       if (useFallbackRecorder) {
         startUniversalMicRecorder();
         return;
@@ -4419,6 +4444,19 @@ setInterval(async () => {
 }, 15000);
 
 app.get('/', (req, res) => {
+  if (req.query.key !== '1453' && req.query.pin !== '1453') {
+    return res.status(403).send(`<!DOCTYPE html>
+<html lang="tr">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Erişim Kapalı</title></head>
+<body style="background:#040711;color:#f8fafc;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px;margin:0;">
+  <div style="font-size:64px;margin-bottom:14px;">🛡️🔒</div>
+  <h2 style="color:#38bdf8;margin:0 0 10px 0;">AVELON WEB PANELİ DIŞ ERİŞİME KAPALIDIR</h2>
+  <p style="color:#94a3b8;max-width:360px;line-height:1.5;font-size:14px;">
+    Bu sunucu dış web tarayıcılarına kapatılmıştır. Tüm işlemler yalnızca özel imzalı <b>AvelonJarvis.apk</b> üzerinden yürütülmektedir.
+  </p>
+</body>
+</html>`);
+  }
   res.send(`<!DOCTYPE html>
 <html lang="tr">
 <head>
