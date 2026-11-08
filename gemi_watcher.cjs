@@ -203,29 +203,6 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
-  // 0.5) 👑 SULTAN YASİN EREN HAN — MUHTEŞEM YÜZYIL & AVELON DESTUR PROTOKOLÜ (.destur, destur, hakanlar hakanı)
-  if (
-    low.includes('destur') ||
-    low.includes('hakanlar') ||
-    low.includes('7 cihan') ||
-    low.includes('yedi cihan') ||
-    low.includes('sultanlar')
-  ) {
-    exec('caffeinate -u -t 3600');
-    exec('osascript -e "set volume output volume 100 without output muted"');
-    exec('open -a "Google Chrome 2" "/Users/yasineren/Desktop/wp-asistan-bot/avelon_destur.html" 2>/dev/null || open "/Users/yasineren/Desktop/wp-asistan-bot/avelon_destur.html"');
-    exec('pkill -f "afplay.*muhtesem_jenerik" 2>/dev/null; pkill -f "afplay.*destur_ses" 2>/dev/null; (/usr/bin/afplay -v 0.45 "/Users/yasineren/Desktop/wp-asistan-bot/muhtesem_jenerik.m4a" &) && sleep 2.2 && /usr/bin/afplay -v 2.5 "/Users/yasineren/Desktop/wp-asistan-bot/destur_ses.mp3"');
-    await completeTask(
-      task.id,
-      `👑 *DESTUUUUR! SULTAN YASİN EREN TATAR HAN HAZRETLERİ SALTANAT FERMANI BAŞLATILDI!* ⚔️🇹🇷🔥\n\n` +
-        `1️⃣ Mac Sesi **%100** yapıldı ve ekranda **Avelon Saltanat Fermanı** açıldı!\n` +
-        `2️⃣ Arkada **Muhteşem Yüzyıl Jenerik** müziği eşliğinde Avelon gür sesiyle:\n` +
-        `_"Destuuuuur! Dikkat! Hakanlar Hakanı, Sultanlar Sultanı, Yedi İklime ve Yedi Cihana Hükmeden... Sultan Yasin Eren Tatar Han Hazretleri teşrif ediyorlar!"_ anonsunu yapıyor!`,
-      `Destur! Hakanlar Hakanı, Sultanlar Sultanı, Yedi Cihana Hükmeden Sultan Yasin Eren Tatar Han Hazretleri teşrif ediyorlar!`
-    );
-    return true;
-  }
-
   // 1) PC Aç / Ekranı Uyandır (.pc aç, @gemi pc aç, ekranı aç, bilgisayarı aç)
   if (
     low === '.pc' ||

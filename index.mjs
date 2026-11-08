@@ -1412,6 +1412,76 @@ async function startWhatsApp() {
     defaultQueryTimeoutMs: 60000,
   });
 
+  function resolveSendJid(jid) {
+    if (!jid || typeof jid !== 'string') return jid;
+    if (jid.endsWith('@lid')) {
+      const raw = cleanNumber(jid);
+      const mapped = lidToPhone[raw];
+      if (mapped) return `${mapped}@s.whatsapp.net`;
+    }
+    return jid;
+  }
+
+  const origSendMessage = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (jid, content, options = {}) => {
+    const resolvedJid = resolveSendJid(jid);
+    const customMsgId =
+      options?.messageId ||
+      '3EB0AVL' + crypto.randomBytes(7).toString('hex').toUpperCase();
+    botSentMsgIds.add(customMsgId);
+    const targetClean = cleanNumber(resolvedJid);
+    const origClean = cleanNumber(jid);
+    globalThis.botLastSentAt = globalThis.botLastSentAt || {};
+    if (targetClean) globalThis.botLastSentAt[targetClean] = Date.now();
+    if (origClean) globalThis.botLastSentAt[origClean] = Date.now();
+
+    try {
+      const res = await origSendMessage(resolvedJid, content, {
+        ...options,
+        messageId: customMsgId,
+      });
+      if (res?.key?.id) botSentMsgIds.add(res.key.id);
+      globalThis.debugReplyLog = globalThis.debugReplyLog || [];
+      globalThis.debugReplyLog.push({
+        time: new Date().toISOString(),
+        ok: true,
+        origJid: jid,
+        resolvedJid,
+        msgId: res?.key?.id || customMsgId,
+      });
+      if (globalThis.debugReplyLog.length > 30) globalThis.debugReplyLog.shift();
+      return res;
+    } catch (err) {
+      globalThis.debugReplyLog = globalThis.debugReplyLog || [];
+      globalThis.debugReplyLog.push({
+        time: new Date().toISOString(),
+        ok: false,
+        origJid: jid,
+        resolvedJid,
+        error: err?.message || String(err),
+      });
+      if (globalThis.debugReplyLog.length > 30) globalThis.debugReplyLog.shift();
+      if (resolvedJid !== jid) {
+        const fallbackRes = await origSendMessage(jid, content, {
+          ...options,
+          messageId: customMsgId,
+        });
+        if (fallbackRes?.key?.id) botSentMsgIds.add(fallbackRes.key.id);
+        return fallbackRes;
+      }
+      throw err;
+    }
+  };
+
+  const origSendPresenceUpdate = sock.sendPresenceUpdate.bind(sock);
+  sock.sendPresenceUpdate = async (type, toJid) => {
+    try {
+      return await origSendPresenceUpdate(type, toJid ? resolveSendJid(toJid) : toJid);
+    } catch (_) {
+      return null;
+    }
+  };
+
   sock.ev.on('creds.update', () => {
     saveCreds();
     syncAuthInfoContactsAndLids();
@@ -1568,8 +1638,7 @@ async function startWhatsApp() {
           msg.message?.audioMessage;
 
         const msgId = msg.key?.id;
-        globalThis.debugUpsertLog = globalThis.debugUpsertLog || [];
-        globalThis.debugUpsertLog.push({
+        const logItem = {
           time: new Date().toISOString(),
           type,
           msgId,
@@ -1579,24 +1648,33 @@ async function startWhatsApp() {
           stubParams: msg.messageStubParameters || null,
           hasMessage: Boolean(msg.message),
           extractedText: extractedText || null,
-        });
+          decision: 'received',
+        };
+        globalThis.debugUpsertLog = globalThis.debugUpsertLog || [];
+        globalThis.debugUpsertLog.push(logItem);
         if (globalThis.debugUpsertLog.length > 40) globalThis.debugUpsertLog.shift();
 
         if (!extractedText && !innerAudio) {
           // Eğer başkası bize mesaj attıysa (!fromMe) ve CIPHERTEXT (stubType === 2) geldiyse:
-          if (!msg.key?.fromMe && (msg.messageStubType === 2 || type === 'notify')) {
+          if (!msg.key?.fromMe && msg.messageStubType === 2) {
             await new Promise((r) => setTimeout(r, 1500));
             if (msgId && processedMsgIds.has(msgId)) {
+              logItem.decision = 'skipped:decryptedByRetry';
               continue; // Retry paketi 1.5 sn içinde şifreyi çözüp zaten cevap verdi!
             }
             extractedText = '[Mesaj]';
+            logItem.decision = 'fallback:ciphertextReply';
           } else {
+            logItem.decision = 'skipped:emptyMessage';
             continue;
           }
         }
 
         if (msgId) {
-          if (processedMsgIds.has(msgId)) continue;
+          if (processedMsgIds.has(msgId)) {
+            logItem.decision = 'skipped:alreadyProcessed';
+            continue;
+          }
           processedMsgIds.add(msgId);
         }
 
@@ -1614,7 +1692,11 @@ async function startWhatsApp() {
         }
 
         const canonicalKey = getCanonicalKey(rawNum);
-        if (!canonicalKey) continue;
+        logItem.canonicalKey = canonicalKey;
+        if (!canonicalKey) {
+          logItem.decision = 'skipped:noCanonicalKey';
+          continue;
+        }
         const isSelfChat =
           (connectedUser?.id && (canonicalKey === connectedUser.id || rawNum === connectedUser.id)) ||
           canonicalKey === '905525222988' ||
@@ -1622,7 +1704,20 @@ async function startWhatsApp() {
 
         // 2) PATRON EREN'İN KENDİ "SİZ" SOHBETİ KOMUTA MERKEZİ VEYA KENDİ ATTIĞI MESAJLAR:
         if (msg.key?.fromMe || isSelfChat) {
-          if (msgId && botSentMsgIds.has(msgId)) continue;
+          const isBotOwnSent =
+            (msgId && (botSentMsgIds.has(msgId) || msgId.startsWith('3EB0AVL'))) ||
+            (type === 'append' &&
+              msg.key?.fromMe &&
+              Date.now() -
+                Math.max(
+                  globalThis.botLastSentAt?.[canonicalKey] || 0,
+                  globalThis.botLastSentAt?.[rawNum] || 0
+                ) <
+                6000);
+          if (isBotOwnSent) {
+            logItem.decision = 'ignored:botOwnSent';
+            continue;
+          }
 
           // 🎤 YENİ: Patron "Siz" sohbetine SES KAYDI (Voice Note) attığında bulutta (PC kapalı olsa bile!) yazıya çevir ve uygula!
           const innerMsg =
@@ -2502,20 +2597,10 @@ async function startWhatsApp() {
         });
         if (recentInboundMessages.length > 30) recentInboundMessages.shift();
 
-        // Eren son 30 SANİYE içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin
-        const OWNER_ACTIVE_PAUSE_MS = 30 * 1000;
-        const lastOwnerWrite =
-          ownerActiveChats[canonicalKey] ||
-          ownerActiveChats[rawNum] ||
-          0;
-        if (lastOwnerWrite && Date.now() - lastOwnerWrite < OWNER_ACTIVE_PAUSE_MS) {
-          console.log(`⏸️ Eren bu sohbete son 30 sn içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
-          continue;
-        }
-
-        // C) EĞER BU KİŞİ EREN'İN ".ara 0532..." KOMUTUYLA YOKLATTIĞI KİŞİYSE VE CEVAP VERDİYSE:
+        // C) EĞER BU KİŞİ EREN'İN ".ara 0532..." KOMUTUYLA YOKLATTIĞI KİŞİYSE VE CEVAP VERDİYSE (Öncelikli):
         const pendingOut = (stateData.pendingOutreach || {})[canonicalKey] || (stateData.pendingOutreach || {})[rawNum];
         if (pendingOut && pendingOut.status === 'waiting') {
+          logItem.decision = 'replied:pendingOutreach';
           pendingOut.status = 'answered';
           pendingOut.reply = text;
           pendingOut.answeredAt = new Date().toISOString();
@@ -2543,6 +2628,18 @@ async function startWhatsApp() {
             `⚡ Onaylamak için: *.onayla ${appt.id}*\n` +
             `⚡ Saat değiştirmek için: *.ertele ${appt.id} Yarın 15:00*`
           );
+          continue;
+        }
+
+        // Eren son 20 SANİYE içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin
+        const OWNER_ACTIVE_PAUSE_MS = 20 * 1000;
+        const lastOwnerWrite =
+          ownerActiveChats[canonicalKey] ||
+          ownerActiveChats[rawNum] ||
+          0;
+        if (lastOwnerWrite && Date.now() - lastOwnerWrite < OWNER_ACTIVE_PAUSE_MS) {
+          logItem.decision = 'skipped:ownerActiveRecently';
+          console.log(`⏸️ Eren bu sohbete son 20 sn içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
           continue;
         }
 
@@ -2636,14 +2733,16 @@ async function startWhatsApp() {
           }
 
           const lastReply = ownerActiveChats[`reply_${canonicalKey}`] || 0;
-          // Aynı kişiye bekleme süresi (varsayılan 1 dakika — 6 saatlik engel kaldırıldı!)
-          const cooldownMs = Math.max(1, Math.min(5, Number(stateData.knownCooldownMinutes) || 1)) * 60 * 1000;
+          // Aynı kişiye bekleme süresi (15 saniye — arka arkaya test ve mesajlarda hemen yanıt versin!)
+          const cooldownMs = 15 * 1000;
 
           if (Date.now() - lastReply < cooldownMs) {
-            console.log(`⏳ Kayıtlı kişi (${entry.name}) ${cooldownMs / 60000} dk bekleme süresinde olduğu için tekrar yazılmadı.`);
+            logItem.decision = 'skipped:knownCooldown';
+            console.log(`⏳ Kayıtlı kişi (${entry.name}) 15 sn bekleme süresinde olduğu için tekrar yazılmadı.`);
             continue;
           }
 
+          logItem.decision = 'replied:knownContact';
           ownerActiveChats[`reply_${canonicalKey}`] = Date.now();
           entry.lastAutoReplyAt = Date.now();
           if (stateData.knownNumbers[rawNum]) {
@@ -3094,9 +3193,9 @@ app.get('/api/gemi-tasks', (req, res) => {
   const now = Date.now();
   let dirty = false;
   for (const t of stateData.gemiTasks || []) {
-    if (t.status === 'pending' && String(t.prompt || '').startsWith('__INCOMING_CALL__:')) {
+    if (t.status === 'pending') {
       const age = t.createdAt ? Math.abs(now - new Date(t.createdAt).getTime()) : 999999;
-      if (age > 12000) {
+      if (age > 25000) {
         t.status = 'completed';
         dirty = true;
       }
@@ -4947,6 +5046,7 @@ app.get('/health', (req, res) => {
     connectionStatus,
     uptime: process.uptime(),
     recentUpserts: (globalThis.debugUpsertLog || []).slice(-15),
+    recentReplies: (globalThis.debugReplyLog || []).slice(-15),
   });
 });
 
