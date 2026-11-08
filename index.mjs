@@ -2975,12 +2975,21 @@ app.post('/api/gemi-tasks/complete', async (req, res) => {
   }
 });
 
-// Telefon (/jarvis) için Canlı Gelen Arama Yoklama Endpoint'i
+// Telefon (/jarvis) ve AvelonJarvis.apk için Canlı Gelen Arama Yoklama Endpoint'i
 app.get('/api/incoming-call-poll', async (req, res) => {
   try {
     const cur = globalThis.lastIncomingCall;
-    if (!cur || cur.decision || Date.now() - cur.timestamp > 30000) {
+    if (!cur || Date.now() - cur.timestamp > 30000) {
       return res.json({ active: false });
+    }
+    if (cur.decision) {
+      return res.json({
+        active: false,
+        callId: cur.callId,
+        decision: cur.decision,
+        callerName: cur.callerName,
+        isGsm: Boolean(cur.isGsm),
+      });
     }
     if (!cur.audioBase64 && cur.spokenAlert) {
       try {
@@ -2994,12 +3003,25 @@ app.get('/api/incoming-call-poll', async (req, res) => {
       callerName: cur.callerName,
       phone: cur.canonicalKey,
       isVideo: cur.isVideo,
+      isGsm: Boolean(cur.isGsm),
+      decision: cur.decision || '',
       spokenAlert: cur.spokenAlert || `Efendim, şu an ${cur.callerName} sizi arıyor, açayım mı?`,
       audioBase64: cur.audioBase64 || null,
     });
   } catch (err) {
     res.json({ active: false });
   }
+});
+
+// 📲 TATAR ENDÜSTRİ ÖZEL AVELON JARVIS ANDROID APK İNDİRME ENDPOINT'İ
+app.get('/avelon.apk', (req, res) => {
+  const apkPath = path.join(__dirname, 'AvelonJarvis.apk');
+  if (!fs.existsSync(apkPath)) {
+    return res.status(404).send('AvelonJarvis.apk bulunamadı.');
+  }
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="AvelonJarvis.apk"');
+  res.sendFile(apkPath);
 });
 
 // Gelen Arama Karar Endpoint'i (Mac'ten veya Telefondan Sesli "Aç" veya "Kapat / Sen Konuş" denildiğinde)
@@ -3626,8 +3648,8 @@ app.get('/jarvis', (req, res) => {
       <button class="q-btn" style="background:rgba(245,158,11,0.25);border-color:#f59e0b;color:#fde68a;" onclick="triggerTestCall()">📞 Arama Anons Testi</button>
     </div>
     <div class="quick-row">
-      <button class="q-btn" style="background:rgba(56,189,248,0.25);border-color:#38bdf8;color:#bae6fd;" onclick="syncMyPhoneContacts()">📒 Rehber İsimlerimi Eşitle (Kayıtlı İsimler)</button>
-      <button class="q-btn" style="background:rgba(168,85,247,0.25);border-color:#a855f7;color:#e9d5ff;" onclick="openSimSetupModal()">📲 Gerçek SIM & Oto-Açma Kurulumu</button>
+      <button class="q-btn" style="background:rgba(56,189,248,0.25);border-color:#38bdf8;color:#bae6fd;" onclick="syncMyPhoneContacts()">📒 Rehber İsimlerimi Eşitle</button>
+      <button class="q-btn" style="background:rgba(168,85,247,0.3);border-color:#a855f7;color:#f3e8ff;" onclick="window.location.href='/avelon.apk'">📲 Avelon Jarvis APK İndir (SIM & Ses)</button>
     </div>
     <div class="quick-row">
       <button class="q-btn" onclick="sendManual('Gündelik hayattan ilginç bir bilgi ver')">🧠 Gündelik Bilgi</button>
