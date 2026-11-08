@@ -2733,16 +2733,44 @@ async function startWhatsApp() {
   // Gelen WhatsApp Sesli / Görüntülü Aramalarını Dinle:
   // 1) Mac'te Avelon hemen sesli olarak: "Efendim, [Kişi] sizi arıyor, açayım mı?" diye sorar!
   // 2) Patron "Kapat / Açma / Sen konuş" derse aramayı meşgule atar (sock.rejectCall) ve Avelon sesli sekreter olarak konuşur!
-  const recentCallReplies = {};
-  const processedCallIds = new Set();
+  globalThis.recentCallReplies = globalThis.recentCallReplies || {};
+  globalThis.processedCallIds = globalThis.processedCallIds || new Set(stateData.processedCallIds || []);
   sock.ev.on('call', async (calls) => {
     const callList = Array.isArray(calls) ? calls : [calls];
 
     for (const call of callList) {
       try {
-        if (!call || (call.status !== 'offer' && call.status !== 'ringing') || call.isGroup) continue;
-        if (call.id && processedCallIds.has(call.id)) continue;
-        if (call.id) processedCallIds.add(call.id);
+        if (!call || call.isGroup) continue;
+
+        // Arama sonlandıysa veya yanıtlandıysa aktif aramayı anında temizle
+        if (
+          call.status === 'terminate' ||
+          call.status === 'reject' ||
+          call.status === 'accept' ||
+          call.status === 'timeout'
+        ) {
+          if (globalThis.lastIncomingCall && (!call.id || globalThis.lastIncomingCall.callId === call.id)) {
+            globalThis.lastIncomingCall = null;
+          }
+          continue;
+        }
+
+        // SADECE gerçek ve canlı 'offer' aramalarını kabul et!
+        // WhatsApp yeniden bağlandığında gelen geçmiş/offline (call.offline) veya 'ringing' (relaylatency/transport) paketlerini yoksay!
+        if (call.status !== 'offer' || call.offline) continue;
+
+        if (call.date) {
+          const callTimeMs = new Date(call.date).getTime();
+          if (!isNaN(callTimeMs) && Math.abs(Date.now() - callTimeMs) > 15000) {
+            continue;
+          }
+        }
+
+        if (call.id && globalThis.processedCallIds.has(call.id)) continue;
+        if (call.id) {
+          globalThis.processedCallIds.add(call.id);
+          stateData.processedCallIds = Array.from(globalThis.processedCallIds).slice(-200);
+        }
 
         const rawFrom = call.from || call.chatId || '';
         const rawPn = call.callerPn || '';
@@ -2760,10 +2788,13 @@ async function startWhatsApp() {
         const canonicalKey = pnNum || getCanonicalKey(rawNum) || rawNum;
         if (!canonicalKey) continue;
 
-        if (recentCallReplies[canonicalKey] && Date.now() - recentCallReplies[canonicalKey] < 12 * 1000) {
+        if (
+          globalThis.recentCallReplies[canonicalKey] &&
+          Date.now() - globalThis.recentCallReplies[canonicalKey] < 20 * 1000
+        ) {
           continue;
         }
-        recentCallReplies[canonicalKey] = Date.now();
+        globalThis.recentCallReplies[canonicalKey] = Date.now();
 
         const isKnown = isKnownPerson(rawNum) || isKnownPerson(canonicalKey) || (lidNum && isKnownPerson(lidNum));
         const last10 = canonicalKey.length >= 10 ? canonicalKey.slice(-10) : '';
@@ -2994,6 +3025,18 @@ app.get('/api/status', (req, res) => {
 
 // Uzaktan @gemi Talimatlarını Mac (Antigravity) İçin Listeleme & Tamamlama Endpoint'leri
 app.get('/api/gemi-tasks', (req, res) => {
+  const now = Date.now();
+  let dirty = false;
+  for (const t of stateData.gemiTasks || []) {
+    if (t.status === 'pending' && String(t.prompt || '').startsWith('__INCOMING_CALL__:')) {
+      const age = t.createdAt ? Math.abs(now - new Date(t.createdAt).getTime()) : 999999;
+      if (age > 12000) {
+        t.status = 'completed';
+        dirty = true;
+      }
+    }
+  }
+  if (dirty) saveData();
   const tasks = (stateData.gemiTasks || []).filter((t) => t.status === 'pending');
   res.json({ ok: true, tasks });
 });
@@ -3025,7 +3068,7 @@ app.post('/api/gemi-tasks/complete', async (req, res) => {
 app.get('/api/incoming-call-poll', async (req, res) => {
   try {
     const cur = globalThis.lastIncomingCall;
-    if (!cur || Date.now() - cur.timestamp > 30000) {
+    if (!cur || Date.now() - cur.timestamp > 12000) {
       return res.json({ active: false });
     }
     if (cur.decision) {
@@ -3780,7 +3823,6 @@ app.get('/jarvis', (req, res) => {
     <div class="reply-text" id="replyBox">🤖 "Avelon" dediğinde sesli olarak "Efendim Patron!" diyeceğim ve her soruna (gündelik hayat, bilim, sistem, Mac) anında cevap vereceğim.</div>
     <div class="quick-row">
       <button class="q-btn" style="background:rgba(16,185,129,0.25);border-color:#10b981;color:#6ee7b7;" onclick="enablePocketMode()">🌙 Cep / Siyah Ekran Modu</button>
-      <button class="q-btn" style="background:rgba(245,158,11,0.25);border-color:#f59e0b;color:#fde68a;" onclick="triggerTestCall()">📞 Arama Anons Testi</button>
     </div>
     <div class="quick-row">
       <button class="q-btn" style="background:rgba(56,189,248,0.25);border-color:#38bdf8;color:#bae6fd;" onclick="syncMyPhoneContacts()">📒 Rehber İsimlerimi Eşitle</button>

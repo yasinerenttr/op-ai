@@ -135,6 +135,17 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
 
   // 0.1) 📞 GELEN ARAMA SESLİ ANONSU VE SESLİ KARAR SİSTEMİ ("Efendim, şu kişi sizi arıyor, açayım mı?")
   if (raw.startsWith('__INCOMING_CALL__:')) {
+    // Görevi hemen tamamlandı işaretle (WhatsApp'a gereksiz görev mesajı atmasın ve tekrar etmesin)
+    await completeTask(task.id, '', '');
+
+    if (task.createdAt) {
+      const ageMs = Math.abs(Date.now() - new Date(task.createdAt).getTime());
+      if (ageMs > 12000) {
+        console.log('⏭️ Eski/bayat arama anonsu atlandı (Age ms):', ageMs);
+        return true;
+      }
+    }
+
     let callInfo = {};
     try {
       callInfo = JSON.parse(raw.slice('__INCOMING_CALL__:'.length));
@@ -142,9 +153,6 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
 
     const callerName = callInfo.callerName || 'Bilinmeyen bir numara';
     const callKind = callInfo.isVideo ? 'görüntülü olarak' : '';
-
-    // Görevi hemen tamamlandı işaretle (WhatsApp'a gereksiz görev mesajı atmasın)
-    await completeTask(task.id, '', '');
 
     try {
       execSync('osascript -e "set volume output volume 85 without output muted"');
