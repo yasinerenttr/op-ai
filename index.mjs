@@ -219,6 +219,12 @@ function isKnownPerson(idOrLid) {
   if (stateData.knownNumbers[clean]) return true;
   if (mappedPhone && stateData.knownNumbers[mappedPhone]) return true;
   if (mappedLid && stateData.knownNumbers[mappedLid]) return true;
+  const last10 = (mappedPhone || clean).length >= 10 ? (mappedPhone || clean).slice(-10) : '';
+  if (last10) {
+    for (const k of Object.keys(stateData.knownNumbers || {})) {
+      if (k.endsWith(last10) && !removed[k]) return true;
+    }
+  }
   return false;
 }
 
@@ -2412,7 +2418,7 @@ async function startWhatsApp() {
 
           // Eren başka birinin sohbetine bizzat kendisi yazdıysa:
           // 1) O kişiyi otomatik Kayıtlı Kişi yap (asla yabancı/şüpheli mesajı gitmesin!)
-          // 2) 6 SAAT boyunca o sohbette Avelon araya girmesin!
+          // 2) Sadece 30 saniye boyunca o sohbette Avelon araya girmesin!
           if (extractedText) {
             ownerActiveChats[canonicalKey] = Date.now();
             ownerActiveChats[rawNum] = Date.now();
@@ -2420,7 +2426,6 @@ async function startWhatsApp() {
               ...(stateData.knownNumbers[canonicalKey] || {}),
               name: stateData.knownNumbers[canonicalKey]?.name || 'Kişisel Sohbet',
               source: 'Eren Yazıştı',
-              lastAutoReplyAt: Date.now(),
               ownerLastWroteAt: Date.now(),
             };
             if (rawNum) {
@@ -2428,7 +2433,6 @@ async function startWhatsApp() {
                 ...(stateData.knownNumbers[rawNum] || {}),
                 name: stateData.knownNumbers[rawNum]?.name || 'Kişisel Sohbet',
                 source: 'Eren Yazıştı',
-                lastAutoReplyAt: Date.now(),
                 ownerLastWroteAt: Date.now(),
               };
             }
@@ -2441,21 +2445,33 @@ async function startWhatsApp() {
 
         if (!stateData.enabled) continue;
 
-        // Eren son 6 SAAT içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin (Çoklu mesaj spamlamasını %100 önler!)
-        const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+        const text = extractedText;
+        if (!text) continue;
+
+        // Gelen mesajı son mesajlar hafızasına kaydet (Jarvis "Son mesajları oku" dediğinde okusun)
+        const senderDisplay =
+          stateData.knownNumbers[canonicalKey]?.name ||
+          stateData.knownNumbers[rawNum]?.name ||
+          msg.pushName ||
+          `+${canonicalKey}`;
+        recentInboundMessages.push({
+          from: canonicalKey,
+          name: senderDisplay,
+          text,
+          time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        });
+        if (recentInboundMessages.length > 30) recentInboundMessages.shift();
+
+        // Eren son 30 SANİYE içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin
+        const OWNER_ACTIVE_PAUSE_MS = 30 * 1000;
         const lastOwnerWrite =
           ownerActiveChats[canonicalKey] ||
           ownerActiveChats[rawNum] ||
-          stateData.knownNumbers[canonicalKey]?.ownerLastWroteAt ||
-          stateData.knownNumbers[rawNum]?.ownerLastWroteAt ||
           0;
-        if (lastOwnerWrite && Date.now() - lastOwnerWrite < SIX_HOURS_MS) {
-          console.log(`⏸️ Eren bu sohbete yakın zamanda bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
+        if (lastOwnerWrite && Date.now() - lastOwnerWrite < OWNER_ACTIVE_PAUSE_MS) {
+          console.log(`⏸️ Eren bu sohbete son 30 sn içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
           continue;
         }
-
-        const text = extractedText;
-        if (!text) continue;
 
         // C) EĞER BU KİŞİ EREN'İN ".ara 0532..." KOMUTUYLA YOKLATTIĞI KİŞİYSE VE CEVAP VERDİYSE:
         const pendingOut = (stateData.pendingOutreach || {})[canonicalKey] || (stateData.pendingOutreach || {})[rawNum];
@@ -2579,15 +2595,16 @@ async function startWhatsApp() {
             entry.name = msg.pushName;
           }
 
-          const lastReply = entry.lastAutoReplyAt || 0;
-          // Aynı kişiye en az 6 saatte (360 dk) sadece 1 kez oto-sekreter mesajı at (üst üste mesaj atmasını önler!)
-          const cooldownMs = Math.max(360, Number(stateData.knownCooldownMinutes) || 360) * 60 * 1000;
+          const lastReply = ownerActiveChats[`reply_${canonicalKey}`] || 0;
+          // Aynı kişiye bekleme süresi (varsayılan 1 dakika — 6 saatlik engel kaldırıldı!)
+          const cooldownMs = Math.max(1, Math.min(5, Number(stateData.knownCooldownMinutes) || 1)) * 60 * 1000;
 
           if (Date.now() - lastReply < cooldownMs) {
-            console.log(`⏳ Kayıtlı kişi (${entry.name}) 6 saatlik bekleme süresinde olduğu için tekrar yazılmadı.`);
+            console.log(`⏳ Kayıtlı kişi (${entry.name}) ${cooldownMs / 60000} dk bekleme süresinde olduğu için tekrar yazılmadı.`);
             continue;
           }
 
+          ownerActiveChats[`reply_${canonicalKey}`] = Date.now();
           entry.lastAutoReplyAt = Date.now();
           if (stateData.knownNumbers[rawNum]) {
             stateData.knownNumbers[rawNum].lastAutoReplyAt = Date.now();
@@ -2724,6 +2741,15 @@ async function startWhatsApp() {
 
         stranger.introMsg = `${stranger.introMsg ? stranger.introMsg + ' | ' : ''}${text}`;
         saveData();
+
+        // 3..7 arası mesajlarda da yabancıya notunun eklendiğini bildir (sessiz kalmasın!)
+        if (!stranger.blocked) {
+          const followUpText =
+            `📝 *Avelon Özel Kalem Notu:* Ek mesajınız (*"${text.slice(0, 80)}"*) #${stranger.queueNo || 60} numaralı randevu dosyanıza eklendi (${stranger.msgCount}/${maxLimit}).\n` +
+            `⏳ Yasin Eren Bey müsait olduğunda size dönüş sağlayacaktır. — *Avelon* 🤖`;
+          const sentFollow = await sock.sendMessage(remoteJid, { text: followUpText }).catch(() => null);
+          if (sentFollow?.key?.id) botSentMsgIds.add(sentFollow.key.id);
+        }
       } catch (err) {
         console.error('Mesaj işleme hatası:', err.message);
       }
@@ -4511,7 +4537,7 @@ setInterval(async () => {
 
 app.get('/', (req, res) => {
   if (req.query.key !== '1453' && req.query.pin !== '1453') {
-    return res.status(403).send(`<!DOCTYPE html>
+    return res.status(200).send(`<!DOCTYPE html>
 <html lang="tr">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Erişim Kapalı</title></head>
 <body style="background:#040711;color:#f8fafc;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px;margin:0;">
