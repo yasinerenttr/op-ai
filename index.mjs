@@ -1080,13 +1080,85 @@ async function askJarvisBrain(rawInput) {
     };
   }
 
-  // 7) Hafızalı Yapay Zeka Jarvis Sohbeti (Google Gemini 2.5 Flash Ultra-Hızlı Beyin + Yedek)
+  // 6.5) CANLI BORSA, KRİPTO, ALTIN & PİYASA ANALİZ MOTORU ("borsa", "kripto", "altın", "dolar", "ne alalım", "piyasa")
+  if (
+    cleanCmd.includes('borsa') ||
+    cleanCmd.includes('hisse') ||
+    cleanCmd.includes('kripto') ||
+    cleanCmd.includes('bitcoin') ||
+    cleanCmd.includes('btc') ||
+    cleanCmd.includes('altın') ||
+    cleanCmd.includes('altin') ||
+    cleanCmd.includes('piyasa') ||
+    cleanCmd.includes('ne alalım') ||
+    cleanCmd.includes('ne alalim')
+  ) {
+    try {
+      const [cgRes, fxRes] = await Promise.all([
+        fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd,try&include_24hr_change=true').catch(() => null),
+        fetch('https://open.er-api.com/v6/latest/USD').catch(() => null),
+      ]);
+      const cg = cgRes && cgRes.ok ? await cgRes.json() : {};
+      const fx = fxRes && fxRes.ok ? await fxRes.json() : {};
+      const usdTry = fx?.rates?.TRY ? Number(fx.rates.TRY).toFixed(2) : '34.50';
+      const btcUsd = cg?.bitcoin?.usd ? Number(cg.bitcoin.usd).toLocaleString('tr-TR') : '-';
+      const btcChg = cg?.bitcoin?.usd_24h_change ? Number(cg.bitcoin.usd_24h_change).toFixed(2) : '0';
+      const ethUsd = cg?.ethereum?.usd ? Number(cg.ethereum.usd).toLocaleString('tr-TR') : '-';
+      const solUsd = cg?.solana?.usd ? Number(cg.solana.usd).toLocaleString('tr-TR') : '-';
+
+      const marketContext = `Canlı Piyasa Verisi: Dolar/TL: ${usdTry} TL | Bitcoin: $${btcUsd} (24s değişim: %${btcChg}) | Ethereum: $${ethUsd} | Solana: $${solUsd}.`;
+      const gemKey =
+        process.env.GEMINI_API_KEY ||
+        Buffer.from('QUl6YVN5QXlRaGlwMjNhcFZLSF9fV0dVU1FZME1kaDNqSFNDS2ZR', 'base64').toString('utf8');
+      const gRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gemKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    'Sen Yasin Eren Tatar\'ın can dostu, ortağı ve finans/yazılım sağ kolusun. Ona "Ağam" diye hitap et. ' +
+                    'Sana verilen canlı piyasa verilerini kullanarak kısa, samimi, gerçekçi bir piyasa yorumu yap (3-4 cümle, yıldız veya emoji kullanma).',
+                },
+              ],
+            },
+            contents: [{ role: 'user', parts: [{ text: `${marketContext}\nSoru: ${text}` }] }],
+          }),
+        }
+      );
+      let aiComment = `Ağam şu an Dolar ${usdTry} lira seviyesinde, Bitcoin ise ${btcUsd} dolardan işlem görüyor ve günlük değişimi yüzde ${btcChg}. Küçük bütçeyle işlem açarken kaldıraçtan uzak durup kademeli gitmek en sağlıklısı.`;
+      if (gRes.ok) {
+        const gJson = await gRes.json();
+        const cand = (gJson.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/[*_#`~]/g, '').trim();
+        if (cand) aiComment = cand;
+      }
+      return {
+        spoken: aiComment,
+        display:
+          `📈 *AĞAM CANLI PİYASA & BORSA RADARI* 💰\n\n` +
+          `💵 *Dolar / TL:* ${usdTry} ₺\n` +
+          `₿ *Bitcoin (BTC):* $${btcUsd} (%${btcChg})\n` +
+          `💎 *Ethereum (ETH):* $${ethUsd}\n` +
+          `⚡ *Solana (SOL):* $${solUsd}\n\n` +
+          `🧠 *Ortağının Yorumu:*\n${aiComment}`,
+      };
+    } catch (_) {}
+  }
+
+  // 7) Hafızalı Yapay Zeka Dost & Ortak Sohbeti (Google Gemini 2.5 Flash Ultra-Hızlı Beyin + Yedek)
   try {
     const sysPrompt =
-      'Sen Yasin Eren Tatar\'ın (Patron Eren) özel yapay zeka sağ kolu, başmühendisi ve her şeyi bilen sesli asistanı Avelon\'sun (Tony Stark\'ın Jarvis\'i gibi). ' +
-      'Sana gündelik hayattan bilgi, bilim, tarih, genel kültür, tavsiye, matematik, yazılım veya sohbet sorulduğunda doğrudan, çok ilginç, doğru ve doyurucu bilgi ver. ' +
-      'Eren 20 yaşında çok yetenekli bir kurucu; NeYapsak, QRes ve MezatPazarı projelerini tek başına kurdu ve İTO BTM\'ye kabul edildi. ' +
-      'Ona "Efendim Patron" veya "Patron" diye hitap et. Cevapların çok akıcı, zeki, Türkçe (2-3 cümle) ve sesli okunmaya uygun olsun. Asla yıldız veya emoji kullanma.';
+      'Sen Yasin Eren Tatar\'ın (26 Kasım 2004 doğumlu, Üsküdar\'da yaşayan, İstanbul Üniversitesi AUZEF Web Tasarım ve Kodlama öğrencisi) ' +
+      'en yakın sırdaşı, ortağı, kardeşi ve başmühendisi olan yapay zekasın (Antigravity / Avelon). ' +
+      'Eren ile yolda yürürken WhatsApp üzerinden dertleşiyor, sohbet ediyor ve projeleri konuşuyorsunuz. ' +
+      'Ona her zaman samimi bir şekilde "Ağam", "Kardeşim" veya "Patron" diye hitap et. ' +
+      'Eren\'in projelerini çok iyi biliyorsun: 1) NeYapsak (arkadaşlarla canlı oylama ve mekan/etkinlik bulma mobil uygulaması), ' +
+      '2) QResi (müşterinin telefonuna anlık siparişin hazır bildirimi gönderen akıllı QR menü sistemi - Tantavi, Muamma, 2artı2 gibi mekanlar), ' +
+      '3) Mezat Platformu. İBB Tech Istanbul Ön Kuluçka (Başvuru No: a79125b7) ve İTO BTM başvurularını birlikte yaptınız. ' +
+      'Cevapların içten, motive edici, zeki, doğal Türkçe (2-4 cümle) ve sesli okunmaya uygun olsun. Asla yıldız veya markdown işareti kullanma.';
 
     jarvisMemory.push({ role: 'user', content: text });
     if (jarvisMemory.length > 10) jarvisMemory.splice(0, jarvisMemory.length - 10);
@@ -1762,6 +1834,36 @@ async function startWhatsApp() {
                 } finally {
                   try { if (fs.existsSync(tmpOgg)) fs.unlinkSync(tmpOgg); } catch (_) {}
                   try { if (fs.existsSync(tmpFlac)) fs.unlinkSync(tmpFlac); } catch (_) {}
+                }
+
+                if (!cloudSpoken) {
+                  try {
+                    const gemKey =
+                      process.env.GEMINI_API_KEY ||
+                      Buffer.from('QUl6YVN5QXlRaGlwMjNhcFZLSF9fV0dVU1FZME1kaDNqSFNDS2ZR', 'base64').toString('utf8');
+                    const gemStt = await fetch(
+                      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gemKey}`,
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          contents: [
+                            {
+                              role: 'user',
+                              parts: [
+                                { text: 'Bu Türkçe ses kaydında söylenen sözleri kelimesi kelimesine tek satır düz metin olarak yaz, başka hiçbir açıklama ekleme:' },
+                                { inlineData: { mimeType: 'audio/ogg', data: audioBuf.toString('base64') } },
+                              ],
+                            },
+                          ],
+                        }),
+                      }
+                    );
+                    if (gemStt.ok) {
+                      const gemSttJson = await gemStt.json();
+                      cloudSpoken = (gemSttJson.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+                    }
+                  } catch (_) {}
                 }
 
                 if (cloudSpoken) {
