@@ -1728,6 +1728,38 @@ async function startWhatsApp() {
         if (globalThis.debugUpsertLog.length > 40) globalThis.debugUpsertLog.shift();
 
         if (!extractedText && !innerAudio) {
+          // EĞER EREN KENDİSİ (WhatsApp Web veya Telefondan) BİR SOHBETE YAZDIYSA (CIPHERTEXT / Çıkartma / Medya dahil):
+          // Şifresi çözülemese bile Eren'in o sohbette aktif olduğunu ANINDA kaydet ki Avelon araya girmesin!
+          if (msg.key?.fromMe) {
+            const rNum = cleanNumber(remoteJid);
+            const cKey = getCanonicalKey(rNum);
+            const isSelf =
+              (connectedUser?.id && (cKey === connectedUser.id || rNum === connectedUser.id)) ||
+              cKey === '905525222988' ||
+              rNum === '73560022323225';
+            const isBotSent =
+              (msgId && (botSentMsgIds.has(msgId) || msgId.startsWith('3EB0AVL'))) ||
+              Date.now() -
+                Math.max(
+                  globalThis.botLastSentAt?.[cKey] || 0,
+                  globalThis.botLastSentAt?.[rNum] || 0
+                ) <
+                8000;
+            if (!isSelf && !isBotSent && cKey) {
+              ownerActiveChats[cKey] = Date.now();
+              if (rNum) ownerActiveChats[rNum] = Date.now();
+              globalThis.lastGlobalOwnerActiveAt = Date.now();
+              if (stateData.knownNumbers[cKey]) {
+                stateData.knownNumbers[cKey].ownerLastWroteAt = Date.now();
+              }
+              if (rNum && stateData.knownNumbers[rNum]) {
+                stateData.knownNumbers[rNum].ownerLastWroteAt = Date.now();
+              }
+              logItem.decision = 'ownerActive:fromMeEmptyOrCipher';
+              continue;
+            }
+          }
+
           // Eğer başkası bize mesaj attıysa (!fromMe) ve CIPHERTEXT (stubType === 2) geldiyse:
           if (!msg.key?.fromMe && msg.messageStubType === 2) {
             await new Promise((r) => setTimeout(r, 1500));
@@ -2656,28 +2688,27 @@ async function startWhatsApp() {
 
           // Eren başka birinin sohbetine bizzat kendisi yazdıysa:
           // 1) O kişiyi otomatik Kayıtlı Kişi yap (asla yabancı/şüpheli mesajı gitmesin!)
-          // 2) Sadece 30 saniye boyunca o sohbette Avelon araya girmesin!
-          if (extractedText) {
-            ownerActiveChats[canonicalKey] = Date.now();
-            ownerActiveChats[rawNum] = Date.now();
-            stateData.knownNumbers[canonicalKey] = {
-              ...(stateData.knownNumbers[canonicalKey] || {}),
-              name: stateData.knownNumbers[canonicalKey]?.name || 'Kişisel Sohbet',
+          // 2) 12 SAAT boyunca o sohbette Avelon asla araya girmesin!
+          ownerActiveChats[canonicalKey] = Date.now();
+          if (rawNum) ownerActiveChats[rawNum] = Date.now();
+          globalThis.lastGlobalOwnerActiveAt = Date.now();
+          stateData.knownNumbers[canonicalKey] = {
+            ...(stateData.knownNumbers[canonicalKey] || {}),
+            name: stateData.knownNumbers[canonicalKey]?.name || 'Kişisel Sohbet',
+            source: 'Eren Yazıştı',
+            ownerLastWroteAt: Date.now(),
+          };
+          if (rawNum) {
+            stateData.knownNumbers[rawNum] = {
+              ...(stateData.knownNumbers[rawNum] || {}),
+              name: stateData.knownNumbers[rawNum]?.name || 'Kişisel Sohbet',
               source: 'Eren Yazıştı',
               ownerLastWroteAt: Date.now(),
             };
-            if (rawNum) {
-              stateData.knownNumbers[rawNum] = {
-                ...(stateData.knownNumbers[rawNum] || {}),
-                name: stateData.knownNumbers[rawNum]?.name || 'Kişisel Sohbet',
-                source: 'Eren Yazıştı',
-                ownerLastWroteAt: Date.now(),
-              };
-            }
-            if (stateData.strangerStages?.[canonicalKey]) delete stateData.strangerStages[canonicalKey];
-            if (stateData.strangerStages?.[rawNum]) delete stateData.strangerStages[rawNum];
-            saveData();
           }
+          if (stateData.strangerStages?.[canonicalKey]) delete stateData.strangerStages[canonicalKey];
+          if (stateData.strangerStages?.[rawNum]) delete stateData.strangerStages[rawNum];
+          saveData();
           continue;
         }
 
@@ -2734,15 +2765,24 @@ async function startWhatsApp() {
           continue;
         }
 
-        // Eren son 20 SANİYE içinde bu kişiye bizzat mesaj yazdıysa Avelon araya girmesin
-        const OWNER_ACTIVE_PAUSE_MS = 20 * 1000;
-        const lastOwnerWrite =
-          ownerActiveChats[canonicalKey] ||
-          ownerActiveChats[rawNum] ||
-          0;
+        // 1) Eren bu sohbete son 12 SAAT içinde bizzat mesaj yazdıysa Avelon ASLA araya girmesin!
+        const OWNER_ACTIVE_PAUSE_MS = 12 * 60 * 60 * 1000;
+        const lastOwnerWrite = Math.max(
+          ownerActiveChats[canonicalKey] || 0,
+          ownerActiveChats[rawNum] || 0,
+          stateData.knownNumbers[canonicalKey]?.ownerLastWroteAt || 0,
+          stateData.knownNumbers[rawNum]?.ownerLastWroteAt || 0
+        );
         if (lastOwnerWrite && Date.now() - lastOwnerWrite < OWNER_ACTIVE_PAUSE_MS) {
           logItem.decision = 'skipped:ownerActiveRecently';
-          console.log(`⏸️ Eren bu sohbete son 20 sn içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
+          console.log(`⏸️ Eren bu sohbete son 12 saat içinde bizzat yazdığı için Avelon araya girmedi (+${canonicalKey}).`);
+          continue;
+        }
+
+        // 2) Eren son 5 DAKİKA içinde WhatsApp'ta herhangi bir sohbete bizzat yazdıysa (telefon elindeyse) Avelon araya girmesin!
+        if (globalThis.lastGlobalOwnerActiveAt && Date.now() - globalThis.lastGlobalOwnerActiveAt < 5 * 60 * 1000) {
+          logItem.decision = 'skipped:ownerGloballyActive';
+          console.log(`⏸️ Eren son 5 dk içinde WhatsApp'ta aktif olduğu için Avelon araya girmedi (+${canonicalKey}).`);
           continue;
         }
 
@@ -2835,30 +2875,50 @@ async function startWhatsApp() {
             entry.name = msg.pushName;
           }
 
-          const lastReply = ownerActiveChats[`reply_${canonicalKey}`] || 0;
-          // Aynı kişiye bekleme süresi (15 saniye — arka arkaya test ve mesajlarda hemen yanıt versin!)
-          const cooldownMs = 15 * 1000;
+          const lastReply = Math.max(
+            ownerActiveChats[`reply_${canonicalKey}`] || 0,
+            ownerActiveChats[`reply_${rawNum}`] || 0,
+            entry.lastAutoReplyAt || 0,
+            stateData.knownNumbers[rawNum]?.lastAutoReplyAt || 0
+          );
+          // Aynı kişiye bekleme süresi (12 SAAT — ardı ardına mesajlarda ASLA üst üste sekreter mesajı atmasın!)
+          const cooldownMs = 12 * 60 * 60 * 1000;
 
           if (Date.now() - lastReply < cooldownMs) {
             logItem.decision = 'skipped:knownCooldown';
-            console.log(`⏳ Kayıtlı kişi (${entry.name}) 15 sn bekleme süresinde olduğu için tekrar yazılmadı.`);
+            console.log(`⏳ Kayıtlı kişi (${entry.name}) 12 saat bekleme süresinde olduğu için tekrar yazılmadı.`);
             continue;
           }
 
           logItem.decision = 'replied:knownContact';
-          ownerActiveChats[`reply_${canonicalKey}`] = Date.now();
-          entry.lastAutoReplyAt = Date.now();
+          const nowReplyTs = Date.now();
+          ownerActiveChats[`reply_${canonicalKey}`] = nowReplyTs;
+          if (rawNum) ownerActiveChats[`reply_${rawNum}`] = nowReplyTs;
+          entry.lastAutoReplyAt = nowReplyTs;
           if (stateData.knownNumbers[rawNum]) {
-            stateData.knownNumbers[rawNum].lastAutoReplyAt = Date.now();
+            stateData.knownNumbers[rawNum].lastAutoReplyAt = nowReplyTs;
           }
           saveData();
 
           console.log(`📒 Kayıtlı kişiye (${entry.name} - +${canonicalKey}) Avelon yanıt gönderiyor...`);
 
           const delayMs = Math.max(1, Number(stateData.replyDelaySec) || 2) * 1000;
+          const scheduledAt = Date.now();
           await sock.sendPresenceUpdate('composing', remoteJid);
           setTimeout(async () => {
             try {
+              const latestOwnerWrite = Math.max(
+                ownerActiveChats[canonicalKey] || 0,
+                ownerActiveChats[rawNum] || 0,
+                globalThis.lastGlobalOwnerActiveAt || 0
+              );
+              if (latestOwnerWrite >= scheduledAt) {
+                await sock.sendPresenceUpdate('paused', remoteJid);
+                return;
+              }
+              globalThis.botLastSentAt = globalThis.botLastSentAt || {};
+              globalThis.botLastSentAt[canonicalKey] = Date.now();
+              if (rawNum) globalThis.botLastSentAt[rawNum] = Date.now();
               const sent = await sock.sendMessage(remoteJid, {
                 text: stateData.knownReplyText,
               });
@@ -2897,9 +2957,22 @@ async function startWhatsApp() {
           console.log(`🕵️ Yabancı Numara (1. Mesaj) [+${canonicalKey} - ${pushName}]: "${text}"`);
 
           const delayMs = Math.max(1, Number(stateData.replyDelaySec) || 2) * 1000;
+          const scheduledAt = Date.now();
           await sock.sendPresenceUpdate('composing', remoteJid);
           setTimeout(async () => {
             try {
+              const latestOwnerWrite = Math.max(
+                ownerActiveChats[canonicalKey] || 0,
+                ownerActiveChats[rawNum] || 0,
+                globalThis.lastGlobalOwnerActiveAt || 0
+              );
+              if (latestOwnerWrite >= scheduledAt) {
+                await sock.sendPresenceUpdate('paused', remoteJid);
+                return;
+              }
+              globalThis.botLastSentAt = globalThis.botLastSentAt || {};
+              globalThis.botLastSentAt[canonicalKey] = Date.now();
+              if (rawNum) globalThis.botLastSentAt[rawNum] = Date.now();
               const sent = await sock.sendMessage(remoteJid, {
                 text: stateData.firstReplyText,
               });
