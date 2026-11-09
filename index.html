@@ -526,13 +526,13 @@
       </div>
 
       <label class="label">E-Posta veya Telefon Numarası (*)</label>
-      <input type="text" id="authPhone" class="input" value="05525222988" placeholder="05xx xxx xx xx veya e-posta" />
+      <input type="text" id="authPhone" class="input" value="" placeholder="05xx xxx xx xx veya kurumsal e-posta" />
 
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <label class="label">Şifre (*)</label>
         <a href="#" onclick="alert('Şifre sıfırlama bağlantısı kayıtlı e-posta adresinize gönderildi.'); return false;" style="font-size:0.76rem; color:var(--primary); text-decoration:none; font-weight:600;">Şifremi Unuttum</a>
       </div>
-      <input type="password" id="authPassword" class="input" value="123456" />
+      <input type="password" id="authPassword" class="input" value="" placeholder="En az 6 karakterli şifreniz" />
 
       <!-- KVKK VE HİZMET SÖZLEŞMESİ ONAY KUTULARI -->
       <div id="kvkkConsentBox" style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px; font-size:0.8rem; color:var(--slate);">
@@ -632,7 +632,7 @@
           <div class="card">
             <h3 style="font-size:1.05rem; margin-bottom:10px;">1. WhatsApp Numarası Bağlama (8 Haneli Eşleştirme Kodu)</h3>
             <div style="display:flex; gap:10px; max-width:520px; flex-wrap:wrap;">
-              <input type="text" id="waPhoneInput" class="input" style="flex:1; margin-bottom:0;" value="05525222988" />
+              <input type="text" id="waPhoneInput" class="input" style="flex:1; margin-bottom:0;" value="" placeholder="İşletme WhatsApp Numarası (05xx xxx xx xx)" />
               <button class="btn btn-primary" onclick="connectWhatsApp('pairing')">8 Haneli Kod Al</button>
               <button class="btn btn-outline" onclick="connectWhatsApp('qr')">QR Kod Göster</button>
             </div>
@@ -681,9 +681,9 @@
     ];
 
     let currentUser = {
-      id: 'u_905525222988',
-      businessName: 'Yasin Eren Randevu & Otomasyon',
-      phone: '05525222988',
+      id: 'u_demo',
+      businessName: 'Örnek Kuaför & Klinik Randevu Merkezi',
+      phone: '',
       planId: 'omni_1490',
       autoReplyText: 'Merhabalar, işletmemize hoş geldiniz. Güncel fiyat ve konum bilgisi için mesaj bırakabilirsiniz.',
       slots: JSON.parse(JSON.stringify(DEFAULT_SLOTS)),
