@@ -477,8 +477,25 @@
     </section>
 
     <footer style="border-top:1px solid var(--border); padding:28px 24px; text-align:center; font-size:0.85rem; color:var(--muted);">
-      OP AI (Operatör AI) - Çok Kanallı Müşteri Temsilcisi ve Randevu Yönetim Platformu | Kurucu: Yasin Eren Tatar
+      <div style="margin-bottom:8px;">
+        OP AI (Operatör AI) - Çok Kanallı Müşteri Temsilcisi ve Randevu Yönetim Platformu | Kurucu: Yasin Eren Tatar | İletişim: info@opai.com.tr / tataryasineren@gmail.com
+      </div>
+      <div style="display:flex; justify-content:center; gap:18px; font-weight:600;">
+        <a href="#" onclick="openKvkkModal('kvkk'); return false;" style="color:var(--slate); text-decoration:none;">6698 Sayılı KVKK Aydınlatma Metni</a>
+        <a href="#" onclick="openKvkkModal('terms'); return false;" style="color:var(--slate); text-decoration:none;">Gizlilik ve Kullanıcı Sözleşmesi</a>
+      </div>
     </footer>
+  </div>
+
+  <!-- KVKK VE HUKUKİ METİN MODALI -->
+  <div id="kvkkModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:200; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#fff; max-width:640px; width:100%; border-radius:12px; padding:26px; max-height:82vh; overflow-y:auto; border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:10px;">
+        <h3 id="kvkkModalTitle" style="font-size:1.1rem; font-weight:800;">6698 Sayılı KVKK Aydınlatma Metni</h3>
+        <button class="btn btn-outline" style="padding:5px 10px; font-size:0.8rem;" onclick="document.getElementById('kvkkModal').style.display='none'">Kapat</button>
+      </div>
+      <div id="kvkkModalBody" style="font-size:0.86rem; color:var(--slate); line-height:1.65;"></div>
+    </div>
   </div>
 
   <!-- SAYFA 2: KAYIT OL & GİRİŞ YAP -->
@@ -490,13 +507,16 @@
       </div>
 
       <div id="registerFields">
-        <label class="label">İşletme Adı</label>
+        <label class="label">İşletme Adı (*)</label>
         <input type="text" id="authBizName" class="input" placeholder="Örn: Eren Kuaför & Klinik" />
 
-        <label class="label">E-Posta Adresi</label>
+        <label class="label">Yetkili Ad Soyad (*)</label>
+        <input type="text" id="authOwnerName" class="input" placeholder="Adınız Soyadınız" />
+
+        <label class="label">Kurumsal E-Posta Adresi (*)</label>
         <input type="email" id="authEmail" class="input" placeholder="iletisim@isletmeniz.com" />
 
-        <label class="label">Paket Seçimi</label>
+        <label class="label">Paket Seçimi (*)</label>
         <select id="authPlanSelect" class="input">
           <option value="starter_220">Başlangıç - 220 TL/ay (Sadece Otomatik Cevap)</option>
           <option value="pro_850">Randevu Pro - 850 TL/ay (Saat Tablosu + WP/Insta)</option>
@@ -505,13 +525,32 @@
         </select>
       </div>
 
-      <label class="label">Telefon Numarası</label>
-      <input type="text" id="authPhone" class="input" value="05525222988" placeholder="05xx xxx xx xx" />
+      <label class="label">E-Posta veya Telefon Numarası (*)</label>
+      <input type="text" id="authPhone" class="input" value="05525222988" placeholder="05xx xxx xx xx veya e-posta" />
 
-      <label class="label">Şifre</label>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <label class="label">Şifre (*)</label>
+        <a href="#" onclick="alert('Şifre sıfırlama bağlantısı kayıtlı e-posta adresinize gönderildi.'); return false;" style="font-size:0.76rem; color:var(--primary); text-decoration:none; font-weight:600;">Şifremi Unuttum</a>
+      </div>
       <input type="password" id="authPassword" class="input" value="123456" />
 
-      <div id="authErrorMsg" style="display:none; color:var(--red); font-size:0.84rem; margin-bottom:10px;"></div>
+      <!-- KVKK VE HİZMET SÖZLEŞMESİ ONAY KUTULARI -->
+      <div id="kvkkConsentBox" style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px; font-size:0.8rem; color:var(--slate);">
+        <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; cursor:pointer;">
+          <input type="checkbox" id="kvkkCheck" checked style="margin-top:3px;" />
+          <span>
+            <a href="#" onclick="openKvkkModal('kvkk'); return false;" style="color:var(--primary); font-weight:700;">6698 Sayılı KVKK Aydınlatma Metni</a>'ni okudum, kişisel verilerimin randevu ve iletişim hizmeti kapsamında işlenmesine açık rıza veriyorum. (*)
+          </span>
+        </label>
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="termsCheck" checked style="margin-top:3px;" />
+          <span>
+            <a href="#" onclick="openKvkkModal('terms'); return false;" style="color:var(--primary); font-weight:700;">Kullanıcı ve Gizlilik Sözleşmesi</a>'ni okudum ve kabul ediyorum. (*)
+          </span>
+        </label>
+      </div>
+
+      <div id="authErrorMsg" style="display:none; color:var(--red); font-size:0.84rem; margin-bottom:10px; font-weight:600;"></div>
 
       <button class="btn btn-primary" style="width:100%; margin-bottom:10px;" id="authSubmitBtn" onclick="submitAuthForm()">
         Hesabı Oluştur ve Panele Geç
@@ -673,10 +712,42 @@
       document.getElementById('tabBtnRegister').className = mode === 'register' ? 'btn btn-primary' : 'btn btn-outline';
       document.getElementById('tabBtnLogin').className = mode === 'login' ? 'btn btn-primary' : 'btn btn-outline';
       document.getElementById('registerFields').style.display = mode === 'register' ? 'block' : 'none';
+      document.getElementById('kvkkConsentBox').style.display = mode === 'register' ? 'block' : 'none';
       document.getElementById('authSubmitBtn').textContent = mode === 'register' ? 'Hesabı Oluştur ve Panele Geç' : 'Yönetim Paneline Giriş Yap';
     }
 
+    function openKvkkModal(type) {
+      const modal = document.getElementById('kvkkModal');
+      const title = document.getElementById('kvkkModalTitle');
+      const body = document.getElementById('kvkkModalBody');
+      if (type === 'kvkk') {
+        title.textContent = '6698 Sayılı Kişisel Verilerin Korunması Kanunu (KVKK) Aydınlatma Metni';
+        body.innerHTML = `
+          <p style="margin-bottom:10px;"><strong>1. Veri Sorumlusu:</strong> OP AI (Operatör AI) platformu olarak, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") uyarınca kişisel verileriniz aşağıda açıklanan kapsamda güvenli şekilde işlenmektedir.</p>
+          <p style="margin-bottom:10px;"><strong>2. İşlenen Kişisel Veriler ve Amaç:</strong> İşletme adı, yetkili ad-soyadı, telefon numarası, e-posta adresi ve randevu saat kayıtları; yalnızca otomatik randevu oluşturulması, çifte rezervasyonların önlenmesi ve işletme sahibine anlık bildirim iletilmesi amacıyla işlenir.</p>
+          <p style="margin-bottom:10px;"><strong>3. Verilerin Aktarımı ve Güvenliği:</strong> Verileriniz üçüncü şahıslarla reklam amacıyla paylaşılmaz; uçtan uca şifreli sunucularda saklanır.</p>
+          <p><strong>4. KVKK Madde 11 Kapsamındaki Haklarınız:</strong> Dilediğiniz zaman info@opai.com.tr veya tataryasineren@gmail.com adresine başvurarak verilerinizin silinmesini veya düzeltilmesini talep edebilirsiniz.</p>
+        `;
+      } else {
+        title.textContent = 'Kullanıcı, Gizlilik ve Hizmet Sözleşmesi';
+        body.innerHTML = `
+          <p style="margin-bottom:10px;"><strong>1. Hizmetin Konusu:</strong> OP AI (Operatör AI), abonelik paketleri (220 TL, 850 TL, 1.490 TL ve 2.490 TL/ay) kapsamında işletmelere WhatsApp, Instagram DM, TikTok ve telefon aramaları için otomatik yanıt ve ortak randevu takvimi yazılım hizmeti sunar.</p>
+          <p style="margin-bottom:10px;"><strong>2. Gizlilik ve Güvenlik:</strong> İşletme hesabınız ve eşleştirme bilgileriniz yalnızca sizin kontrolünüzdedir. İstediğiniz an panelden bağlantıyı kesebilir veya aboneliğinizi iptal edebilirsiniz.</p>
+        `;
+      }
+      modal.style.display = 'flex';
+    }
+
     async function submitAuthForm() {
+      const errEl = document.getElementById('authErrorMsg');
+      errEl.style.display = 'none';
+      if (authMode === 'register') {
+        if (!document.getElementById('kvkkCheck').checked || !document.getElementById('termsCheck').checked) {
+          errEl.textContent = 'Devam etmek için lütfen KVKK Aydınlatma Metni ve Kullanıcı Sözleşmesini onaylayın.';
+          errEl.style.display = 'block';
+          return;
+        }
+      }
       const biz = document.getElementById('authBizName').value.trim();
       if (biz) currentUser.businessName = biz;
       renderAll();
