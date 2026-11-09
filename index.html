@@ -552,11 +552,8 @@
 
       <div id="authErrorMsg" style="display:none; color:var(--red); font-size:0.84rem; margin-bottom:10px; font-weight:600;"></div>
 
-      <button class="btn btn-primary" style="width:100%; margin-bottom:10px;" id="authSubmitBtn" onclick="submitAuthForm()">
+      <button class="btn btn-primary" style="width:100%;" id="authSubmitBtn" onclick="submitAuthForm()">
         Hesabı Oluştur ve Panele Geç
-      </button>
-      <button class="btn btn-outline" style="width:100%;" onclick="goToDashboardDirect()">
-        Örnek İşletme Paneline Doğrudan Geç
       </button>
     </div>
   </div>
@@ -738,32 +735,101 @@
       modal.style.display = 'flex';
     }
 
+    const API_BASE = window.location.hostname.includes('github.io') ? 'http://localhost:4080' : '';
+    let authToken = localStorage.getItem('opai_token') || '';
+
     async function submitAuthForm() {
       const errEl = document.getElementById('authErrorMsg');
       errEl.style.display = 'none';
+      const phoneVal = document.getElementById('authPhone').value.trim();
+      const passVal = document.getElementById('authPassword').value.trim();
+
       if (authMode === 'register') {
+        const ownerName = (document.getElementById('authOwnerName')?.value || '').trim();
+        const biz = document.getElementById('authBizName').value.trim();
+        const email = document.getElementById('authEmail').value.trim();
+        const planId = document.getElementById('authPlanSelect').value;
+
+        if (!biz || !email || !phoneVal || !passVal) {
+          errEl.textContent = 'Lütfen işletme adı, kurumsal e-posta, telefon ve şifre alanlarını eksiksiz doldurun.';
+          errEl.style.display = 'block';
+          return;
+        }
         if (!document.getElementById('kvkkCheck').checked || !document.getElementById('termsCheck').checked) {
-          errEl.textContent = 'Devam etmek için lütfen KVKK Aydınlatma Metni ve Kullanıcı Sözleşmesini onaylayın.';
+          errEl.textContent = 'Devam etmek için lütfen 6698 Sayılı KVKK Aydınlatma Metni ve Kullanıcı Sözleşmesini onaylayın.';
+          errEl.style.display = 'block';
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ownerName,
+              businessName: biz,
+              email,
+              phone: phoneVal,
+              password: passVal,
+              planId,
+              kvkkApproved: true,
+              kvkkApprovedAt: new Date().toISOString(),
+            }),
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            errEl.textContent = data.error || 'Kayıt oluşturulamadı.';
+            errEl.style.display = 'block';
+            return;
+          }
+          authToken = data.token;
+          localStorage.setItem('opai_token', authToken);
+          currentUser = data.user;
+          renderAll();
+          showPage('dashboard');
+          return;
+        } catch (e) {
+          errEl.textContent = 'Sunucuya bağlanılamadı. Lütfen bağlantınızı kontrol edin.';
+          errEl.style.display = 'block';
+          return;
+        }
+      } else {
+        if (!phoneVal || !passVal) {
+          errEl.textContent = 'Lütfen telefon numaranızı (veya e-postanızı) ve şifrenizi girin.';
+          errEl.style.display = 'block';
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phoneVal, password: passVal }),
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            errEl.textContent = data.error || 'Giriş bilgileri hatalı.';
+            errEl.style.display = 'block';
+            return;
+          }
+          authToken = data.token;
+          localStorage.setItem('opai_token', authToken);
+          currentUser = data.user;
+          renderAll();
+          showPage('dashboard');
+          return;
+        } catch (e) {
+          errEl.textContent = 'Sunucuya bağlanılamadı.';
           errEl.style.display = 'block';
           return;
         }
       }
-      const biz = document.getElementById('authBizName').value.trim();
-      if (biz) currentUser.businessName = biz;
-      renderAll();
-      showPage('dashboard');
-    }
-
-    function goToDashboardDirect() {
-      loadMe().finally(() => {
-        renderAll();
-        showPage('dashboard');
-      });
     }
 
     async function loadMe() {
       try {
-        const res = await fetch('/api/me');
+        const res = await fetch(`${API_BASE}/api/me`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
         const data = await res.json();
         if (data.ok && data.user) {
           currentUser = data.user;
