@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OP AI (Operatör AI) - Müşteri Temsilcisi ve Ortak Randevu Sistemi</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --navy: #0f172a;
+      --slate: #334155;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --green: #16a34a;
+      --green-bg: #f0fdf4;
+      --red: #dc2626;
+      --red-bg: #fef2f2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--bg); color: var(--navy); min-height: 100vh; line-height: 1.5; }
+
+    /* ÜST MENÜ */
+    .navbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .navbar-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--navy);
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--navy);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      font-weight: 800;
+    }
+    .nav-links {
+      display: flex;
+      gap: 28px;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .nav-links a { color: var(--slate); text-decoration: none; }
+    .nav-links a:hover { color: var(--primary); }
+    @media (max-width: 760px) { .nav-links { display: none; } }
+
+    .btn {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-outline { background: var(--surface); color: var(--navy); border-color: #cbd5e1; }
+    .btn-outline:hover { background: #f1f5f9; }
+    .btn-dark { background: var(--navy); color: #fff; }
+
+    /* HERO */
+    .hero {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 64px 24px 56px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 48px;
+      align-items: center;
+    }
+    @media (max-width: 920px) { .hero { grid-template-columns: 1fr; padding: 36px 20px; } }
+    .tag-label {
+      display: inline-block;
+      background: #eff6ff;
+      color: var(--primary-dark);
+      border: 1px solid #bfdbfe;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: 2.65rem;
+      font-weight: 800;
+      line-height: 1.16;
+      letter-spacing: -0.02em;
+      margin-bottom: 18px;
+      color: var(--navy);
+    }
+    @media (max-width: 600px) { .hero h1 { font-size: 2rem; } }
+    .hero p {
+      font-size: 1.05rem;
+      color: var(--slate);
+      margin-bottom: 26px;
+      line-height: 1.65;
+    }
+
+    /* CANLI PANEL ÖNİZLEME KARTI */
+    .preview-window {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+    }
+    .preview-header {
+      background: var(--navy);
+      color: #fff;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.86rem;
+      font-weight: 600;
+    }
+    .preview-body { padding: 20px; }
+    .slot-preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .slot-pill {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .slot-pill.free { background: var(--green-bg); border-color: #86efac; }
+    .slot-pill.busy { background: var(--red-bg); border-color: #fca5a5; }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .dot.green { background: var(--green); }
+    .dot.red { background: var(--red); }
+
+    /* BÖLÜMLER */
+    .section {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 56px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .section-header {
+      max-width: 680px;
+      margin-bottom: 36px;
+    }
+    .section-header h2 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .section-header p { color: var(--muted); font-size: 0.98rem; }
+
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    @media (max-width: 860px) { .grid-3 { grid-template-columns: 1fr; } }
+    .info-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .info-card h3 { font-size: 1.08rem; font-weight: 700; margin-bottom: 8px; }
+    .info-card p { font-size: 0.9rem; color: var(--slate); line-height: 1.6; }
+
+    /* FİYATLANDIRMA */
+    .plans-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    @media (max-width: 960px) { .plans-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .plans-grid { grid-template-columns: 1fr; } }
+    .plan-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .plan-card.featured {
+      border: 2px solid var(--primary);
+      background: #f8fbff;
+    }
+    .plan-price { font-size: 1.75rem; font-weight: 800; color: var(--navy); margin: 12px 0; }
+    .plan-list { list-style: none; font-size: 0.85rem; color: var(--slate); margin-bottom: 20px; }
+    .plan-list li { padding: 5px 0; border-bottom: 1px solid #f1f5f9; }
+
+    /* KAYIT VE GİRİŞ EKRANI */
+    .auth-container {
+      max-width: 440px;
+      margin: 48px auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+    .input, .textarea {
+      width: 100%;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      color: var(--navy);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      margin-bottom: 14px;
+    }
+    .label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 5px;
+    }
+
+    /* YÖNETİM PANELİ */
+    .dash-wrap {
+      max-width: 1160px;
+      margin: 24px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 820px) { .dash-wrap { grid-template-columns: 1fr; } }
+    .dash-nav {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      height: fit-content;
+    }
+    .dash-nav button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: var(--slate);
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .dash-nav button.active, .dash-nav button:hover {
+      background: #eff6ff;
+      color: var(--primary-dark);
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+    .slots-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 720px) { .slots-grid { grid-template-columns: repeat(2, 1fr); } }
+    .slot-item {
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      border: 1.5px solid var(--border);
+    }
+    .slot-item.free { background: var(--green-bg); border-color: #86efac; }
+    .slot-item.busy { background: var(--red-bg); border-color: #fca5a5; }
+    .notif-item {
+      padding: 12px 14px;
+      border-left: 3px solid var(--primary);
+      background: #f8fafc;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 0.88rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    .view-section { display: none; }
+    .view-section.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- ÜST BAR -->
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a href="#" class="brand" onclick="showPage('landing'); return false;">
+        <span class="brand-mark">OP</span>
+        <span>OP AI <span style="font-weight:500; color:var(--muted); font-size:0.92rem;">| Operatör AI</span></span>
+      </a>
+
+      <nav class="nav-links" id="publicNavLinks">
+        <a href="#ozellikler">Nasıl Çalışır?</a>
+        <a href="#uygulama">Mobil ve Web</a>
+        <a href="#fiyatlandirma">Paketler</a>
+      </nav>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-outline" onclick="openAuthPage('login')">Giriş Yap</button>
+        <button class="btn btn-primary" onclick="openAuthPage('register')">Kayıt Ol</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SAYFA 1: TANITIM VİTRİNİ -->
+  <div id="page-landing">
+    <section class="hero">
+      <div>
+        <span class="tag-label">WhatsApp, Instagram DM, TikTok ve Sesli Telefon Yönetimi</span>
+        <h1>İşletmeniz İçin 7/24 Çalışan Müşteri Temsilcisi ve Ortak Randevu Sistemi</h1>
+        <p>
+          OP AI (Operatör AI); kuaför, berber, diş kliniği ve güzellik merkezlerinin gelen mesajlarını ve telefon aramalarını tek bir ortak takvimde karşılar. Müşteri yazdığında veya aradığında hangi saatlerin dolu hangi saatlerin boş olduğunu söyler, seçilen saati tüm kanallarda kapatır ve telefonunuza bildirim gönderir.
+        </p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <button class="btn btn-primary" style="padding:13px 24px; font-size:0.96rem;" onclick="openAuthPage('register')">
+            İşletme Hesabı Oluştur
+          </button>
+          <button class="btn btn-outline" style="padding:13px 22px; font-size:0.96rem;" onclick="goToDashboardDirect()">
+            Yönetim Panelini İncele
+          </button>
+        </div>
+      </div>
+
+      <div class="preview-window">
+        <div class="preview-header">
+          <span>OP AI - Ortak Randevu Çizelgesi</span>
+          <span style="color:#86efac; font-size:0.78rem;">Canlı Senkronizasyon</span>
+        </div>
+        <div class="preview-body">
+          <div class="slot-preview-grid">
+            <div class="slot-pill free">
+              <div style="font-weight:700;"><span class="dot green"></span>Saat 1 (13:00) - BOŞ</div>
+              <div style="font-size:0.76rem; color:var(--slate); margin-top:4px;">Randevuya Açık</div>
+            </div>
+            <div class="slot-pill busy">
+              <div style="font-weight:700;"><span class="dot red"></span>Saat 4 (16:00) - DOLU</div>
+              <div style="font-size:0.76rem; color:var(--slate); margin-top:4px;">WhatsApp - Mehmet Yılmaz</div>
+            </div>
+            <div class="slot-pill busy">
+              <div style="font-weight:700;"><span class="dot red"></span>Saat 5 (17:00) - DOLU</div>
+              <div style="font-size:0.76rem; color:var(--slate); margin-top:4px;">Instagram - @selin_kaya</div>
+            </div>
+            <div class="slot-pill free">
+              <div style="font-weight:700;"><span class="dot green"></span>Saat 6 (18:00) - BOŞ</div>
+              <div style="font-size:0.76rem; color:var(--slate); margin-top:4px;">Randevuya Açık</div>
+            </div>
+          </div>
+          <div style="background:#f8fafc; border:1px solid var(--border); border-left:3px solid var(--green); border-radius:6px; padding:10px 12px; font-size:0.8rem; margin-bottom:8px;">
+            <strong>Son Bildirim (Telefon Araması):</strong> Ahmet Yılmaz aradı, sesli temsilci görüştü ve Saat 6 (18:00) için randevu oluşturdu.
+          </div>
+          <div style="background:#f8fafc; border:1px solid var(--border); border-left:3px solid var(--primary); border-radius:6px; padding:10px 12px; font-size:0.8rem;">
+            <strong>Son Bildirim (Instagram DM):</strong> @selin_kaya, Saat 5 (17:00) için randevu oluşturdu.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="ozellikler" class="section">
+      <div class="section-header">
+        <h2>WhatsApp Business ile Arasındaki Fark Nedir?</h2>
+        <p>WhatsApp Business yalnızca sabit karşılama mesajı gönderir. OP AI ise dolu ve boş saatlerinizi takip ederek randevuyu doğrudan takvime işler.</p>
+      </div>
+
+      <div class="grid-3" id="uygulama">
+        <div class="info-card">
+          <h3>1. Dolu ve Boş Saat Kontrolü</h3>
+          <p>Müşteri mesaj attığında saat 4 ve 5'in dolu, saat 1 ve 6'nın boş olduğunu otomatik iletir. Müşteri "Saat 6" yazdığında o saati tüm kanallarda kapatır.</p>
+        </div>
+        <div class="info-card">
+          <h3>2. Telefon Aramalarını Sesli Karşılama</h3>
+          <p>Müşteri telefonla aradığında müşteri temsilcisi gibi telefonu açıp sesli konuşur, müsait saatleri okur ve telefondan randevu kaydı alır.</p>
+        </div>
+        <div class="info-card">
+          <h3>3. Mobil Uygulama ve Web Paneli</h3>
+          <p>İster iOS / Android mobil uygulamadan ister bilgisayarınızdan saatleri açıp kapatabilir, gelen randevuları anlık bildirim olarak takip edebilirsiniz.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="fiyatlandirma" class="section">
+      <div class="section-header">
+        <h2>Abonelik Paketleri</h2>
+        <p>Sadece otomatik cevaplama yapan 220 TL'lik başlangıç paketinden, sesli telefon temsilcili kurumsal pakete kadar işletmenize uygun planı seçin.</p>
+      </div>
+
+      <div class="plans-grid">
+        <div class="plan-card">
+          <div>
+            <div style="font-size:0.75rem; font-weight:700; color:var(--muted);">PAKET 1</div>
+            <h3 style="font-size:1.05rem; margin-top:4px;">Başlangıç (Sadece Oto-Cevap)</h3>
+            <div class="plan-price">220 TL <span style="font-size:0.82rem; font-weight:500; color:var(--muted);">/ ay</span></div>
+            <ul class="plan-list">
+              <li>7/24 Otomatik Karşılama Yanıtı</li>
+              <li>Fiyat ve Konum Bilgisi Paylaşımı</li>
+              <li>Randevu ve Saat Tablosu İçermez</li>
+            </ul>
+          </div>
+          <button class="btn btn-outline" style="width:100%;" onclick="openAuthPage('register', 'starter_220')">Seç ve Kayıt Ol</button>
+        </div>
+
+        <div class="plan-card">
+          <div>
+            <div style="font-size:0.75rem; font-weight:700; color:var(--muted);">PAKET 2</div>
+            <h3 style="font-size:1.05rem; margin-top:4px;">Randevu Pro</h3>
+            <div class="plan-price">850 TL <span style="font-size:0.82rem; font-weight:500; color:var(--muted);">/ ay</span></div>
+            <ul class="plan-list">
+              <li>Otomatik Cevap + Dolu/Boş Saat Tablosu</li>
+              <li>WhatsApp ve Instagram DM Takvimi</li>
+              <li>Mobil Uygulamaya Anlık Bildirim</li>
+            </ul>
+          </div>
+          <button class="btn btn-outline" style="width:100%;" onclick="openAuthPage('register', 'pro_850')">Seç ve Kayıt Ol</button>
+        </div>
+
+        <div class="plan-card featured">
+          <div>
+            <div style="font-size:0.75rem; font-weight:700; color:var(--primary);">PAKET 3 - ÖNERİLEN</div>
+            <h3 style="font-size:1.05rem; margin-top:4px;">Omni AI (WP + Insta + TikTok)</h3>
+            <div class="plan-price">1.490 TL <span style="font-size:0.82rem; font-weight:500; color:var(--muted);">/ ay</span></div>
+            <ul class="plan-list">
+              <li>WhatsApp + Instagram + TikTok Ortak Takvim</li>
+              <li>Ses Kaydı (Voice Note) ile Müşteri Yanıtlama</li>
+              <li>Otomatik Çakışma Önleyici Saat Kilitleme</li>
+            </ul>
+          </div>
+          <button class="btn btn-primary" style="width:100%;" onclick="openAuthPage('register', 'omni_1490')">Seç ve Kayıt Ol</button>
+        </div>
+
+        <div class="plan-card">
+          <div>
+            <div style="font-size:0.75rem; font-weight:700; color:var(--muted);">PAKET 4</div>
+            <h3 style="font-size:1.05rem; margin-top:4px;">Kurumsal VIP + Sesli Santral</h3>
+            <div class="plan-price">2.490 TL <span style="font-size:0.82rem; font-weight:500; color:var(--muted);">/ ay</span></div>
+            <ul class="plan-list">
+              <li>Telefon Aramalarını Açıp Konuşan Sesli Temsilci</li>
+              <li>Reels ve TikTok Yorumlarına Otomatik DM</li>
+              <li>Randevu Öncesi Otomatik Hatırlatma Mesajı</li>
+            </ul>
+          </div>
+          <button class="btn btn-outline" style="width:100%;" onclick="openAuthPage('register', 'vip_2490')">Seç ve Kayıt Ol</button>
+        </div>
+      </div>
+    </section>
+
+    <footer style="border-top:1px solid var(--border); padding:28px 24px; text-align:center; font-size:0.85rem; color:var(--muted);">
+      OP AI (Operatör AI) - Çok Kanallı Müşteri Temsilcisi ve Randevu Yönetim Platformu | Kurucu: Yasin Eren Tatar
+    </footer>
+  </div>
+
+  <!-- SAYFA 2: KAYIT OL & GİRİŞ YAP -->
+  <div id="page-auth" style="display:none;">
+    <div class="auth-container">
+      <div style="display:flex; gap:8px; margin-bottom:20px;">
+        <button id="tabBtnRegister" class="btn btn-primary" style="flex:1;" onclick="switchAuthTab('register')">Yeni İşletme Kaydı</button>
+        <button id="tabBtnLogin" class="btn btn-outline" style="flex:1;" onclick="switchAuthTab('login')">Giriş Yap</button>
+      </div>
+
+      <div id="registerFields">
+        <label class="label">İşletme Adı</label>
+        <input type="text" id="authBizName" class="input" placeholder="Örn: Eren Kuaför & Klinik" />
+
+        <label class="label">E-Posta Adresi</label>
+        <input type="email" id="authEmail" class="input" placeholder="iletisim@isletmeniz.com" />
+
+        <label class="label">Paket Seçimi</label>
+        <select id="authPlanSelect" class="input">
+          <option value="starter_220">Başlangıç - 220 TL/ay (Sadece Otomatik Cevap)</option>
+          <option value="pro_850">Randevu Pro - 850 TL/ay (Saat Tablosu + WP/Insta)</option>
+          <option value="omni_1490" selected>Omni AI - 1.490 TL/ay (WP + Insta + TikTok + Sesli)</option>
+          <option value="vip_2490">Kurumsal VIP - 2.490 TL/ay (Sesli Telefon Temsilcisi)</option>
+        </select>
+      </div>
+
+      <label class="label">Telefon Numarası</label>
+      <input type="text" id="authPhone" class="input" value="05525222988" placeholder="05xx xxx xx xx" />
+
+      <label class="label">Şifre</label>
+      <input type="password" id="authPassword" class="input" value="123456" />
+
+      <div id="authErrorMsg" style="display:none; color:var(--red); font-size:0.84rem; margin-bottom:10px;"></div>
+
+      <button class="btn btn-primary" style="width:100%; margin-bottom:10px;" id="authSubmitBtn" onclick="submitAuthForm()">
+        Hesabı Oluştur ve Panele Geç
+      </button>
+      <button class="btn btn-outline" style="width:100%;" onclick="goToDashboardDirect()">
+        Örnek İşletme Paneline Doğrudan Geç
+      </button>
+    </div>
+  </div>
+
+  <!-- SAYFA 3: YÖNETİM PANELİ -->
+  <div id="page-dashboard" style="display:none;">
+    <div class="dash-wrap">
+      <aside class="dash-nav">
+        <div style="font-weight:800; font-size:0.95rem; padding:8px 12px 12px; border-bottom:1px solid var(--border); margin-bottom:8px;" id="sideBizName">
+          Yasin Eren Randevu
+        </div>
+        <button class="active" onclick="openTab('calendar', this)">Saatler ve Randevular</button>
+        <button onclick="openTab('voicecall', this)">Sesli Telefon Temsilcisi</button>
+        <button onclick="openTab('channels', this)">Kanal Bağlantıları</button>
+        <button onclick="openTab('settings', this)">İşletme Ayarları</button>
+        <button onclick="showPage('landing')">Ana Sayfaya Dön</button>
+      </aside>
+
+      <main>
+        <section id="view-calendar" class="view-section active">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+              <strong>Canlı Randevu Testi (Kanallardan Gelen Mesaj ve Aramayı Test Edin)</strong>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-primary" style="font-size:0.8rem; padding:8px 12px;" onclick="quickWebhookTest('whatsapp', 'Ahmet Yılmaz', '05358889900', 'Saat 6 olsun')">
+                WhatsApp: "Saat 6 olsun"
+              </button>
+              <button class="btn btn-outline" style="font-size:0.8rem; padding:8px 12px;" onclick="quickWebhookTest('instagram', '@zeynep_demir', 'Instagram DM', 'Saat 1 olsun')">
+                Instagram: "Saat 1 olsun"
+              </button>
+              <button class="btn btn-outline" style="font-size:0.8rem; padding:8px 12px;" onclick="quickWebhookTest('tiktok', '@burak_tiktok', 'TikTok DM', 'Saat 2 olsun')">
+                TikTok: "Saat 2 olsun"
+              </button>
+              <button class="btn btn-dark" style="font-size:0.8rem; padding:8px 12px;" onclick="quickVoiceCallBook('Saat 3 olsun lütfen')">
+                Telefon Araması: "Saat 3 olsun"
+              </button>
+            </div>
+            <div id="quickTestResultBanner" style="display:none; margin-top:12px; padding:10px 12px; border-radius:6px; background:#f0fdf4; border:1px solid #86efac; font-size:0.84rem; color:#166534; font-weight:600;"></div>
+          </div>
+
+          <div class="card">
+            <h3 style="font-size:1.05rem; margin-bottom:14px;">Günlük Dolu / Boş Saat Çizelgesi (Kutulara Tıklayarak Açıp Kapatabilirsiniz)</h3>
+            <div class="slots-grid" id="slotsGrid"></div>
+          </div>
+
+          <div class="card">
+            <h3 style="font-size:1.05rem; margin-bottom:14px;">Gelen Randevu Bildirimleri (<span id="notifCountBadge">0</span>)</h3>
+            <div id="notificationsList"></div>
+          </div>
+        </section>
+
+        <section id="view-voicecall" class="view-section">
+          <div class="card">
+            <h3 style="font-size:1.05rem; margin-bottom:8px;">Sesli Telefon Müşteri Temsilcisi</h3>
+            <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
+              Müşteri işletmeyi telefonla aradığında sistem telefonu açar, dolu ve boş saatleri sesli olarak okur ve müşterinin söylediği saate randevu yazar.
+            </p>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+              <input type="text" id="callerNameInput" class="input" style="max-width:200px; margin-bottom:0;" value="Ahmet Yılmaz" />
+              <input type="text" id="callerPhoneInput" class="input" style="max-width:200px; margin-bottom:0;" value="05358889900" />
+              <button class="btn btn-primary" onclick="startLiveAiCall()">1. Telefonu Ara (Temsilci Açsın)</button>
+              <button class="btn btn-outline" onclick="sendVoiceTurn('Saat 6 olsun lütfen')">2. "Saat 6 olsun" Söyle</button>
+            </div>
+            <div id="callTranscriptBox" style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:14px; min-height:100px; font-size:0.88rem; display:grid; gap:8px;">
+              <div style="color:var(--muted);">Arama başlatmak için yukarıdaki butona tıklayın.</div>
+            </div>
+            <audio id="aiCallAudioPlayer" style="width:100%; margin-top:12px; display:none;" controls autoplay></audio>
+          </div>
+        </section>
+
+        <section id="view-channels" class="view-section">
+          <div class="card">
+            <h3 style="font-size:1.05rem; margin-bottom:10px;">1. WhatsApp Numarası Bağlama (8 Haneli Eşleştirme Kodu)</h3>
+            <div style="display:flex; gap:10px; max-width:520px; flex-wrap:wrap;">
+              <input type="text" id="waPhoneInput" class="input" style="flex:1; margin-bottom:0;" value="05525222988" />
+              <button class="btn btn-primary" onclick="connectWhatsApp('pairing')">8 Haneli Kod Al</button>
+              <button class="btn btn-outline" onclick="connectWhatsApp('qr')">QR Kod Göster</button>
+            </div>
+            <div id="waConnectResult" style="display:none; margin-top:14px; padding:14px; border-radius:8px; background:#f8fafc; border:1px solid var(--border);">
+              <div id="waConnectText" style="font-weight:700;">Bağlantı başlatılıyor...</div>
+              <img id="waQrImage" style="display:none; margin-top:10px; max-width:200px;" />
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="font-size:1.05rem; margin-bottom:10px;">2. Instagram DM ve TikTok Hesap Bağlantısı</h3>
+            <div style="max-width:480px;">
+              <label class="label">Instagram Kullanıcı Adı</label>
+              <input type="text" id="instaUserInput" class="input" placeholder="@isletmeniz" />
+              <label class="label">TikTok Kullanıcı Adı</label>
+              <input type="text" id="tiktokUserInput" class="input" placeholder="@isletmeniz" />
+              <button class="btn btn-primary" onclick="saveChannelSettings()">Bilgileri Kaydet</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view-section">
+          <div class="card" style="max-width:560px;">
+            <h3 style="font-size:1.05rem; margin-bottom:12px;">İşletme Bilgileri ve Otomatik Yanıt Metni</h3>
+            <label class="label">İşletme Adı</label>
+            <input type="text" id="bizNameInput" class="input" />
+            <label class="label">220 TL Paketi Otomatik Karşılama Metni</label>
+            <textarea id="autoReplyInput" rows="4" class="textarea"></textarea>
+            <button class="btn btn-primary" onclick="saveChannelSettings()">Ayarları Kaydet</button>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_SLOTS = [
+      { key: '1', shortHour: '1', time24: '13:00', status: 'free', bookedBy: null, platform: null },
+      { key: '2', shortHour: '2', time24: '14:00', status: 'free', bookedBy: null, platform: null },
+      { key: '3', shortHour: '3', time24: '15:00', status: 'free', bookedBy: null, platform: null },
+      { key: '4', shortHour: '4', time24: '16:00', status: 'busy', bookedBy: 'Mehmet Yılmaz', platform: 'whatsapp' },
+      { key: '5', shortHour: '5', time24: '17:00', status: 'busy', bookedBy: '@selin_kaya', platform: 'instagram' },
+      { key: '6', shortHour: '6', time24: '18:00', status: 'free', bookedBy: null, platform: null },
+      { key: '7', shortHour: '7', time24: '19:00', status: 'free', bookedBy: null, platform: null },
+      { key: '8', shortHour: '8', time24: '20:00', status: 'free', bookedBy: null, platform: null },
+    ];
+
+    let currentUser = {
+      id: 'u_905525222988',
+      businessName: 'Yasin Eren Randevu & Otomasyon',
+      phone: '05525222988',
+      planId: 'omni_1490',
+      autoReplyText: 'Merhabalar, işletmemize hoş geldiniz. Güncel fiyat ve konum bilgisi için mesaj bırakabilirsiniz.',
+      slots: JSON.parse(JSON.stringify(DEFAULT_SLOTS)),
+      notifications: [
+        { id: 2, time: '14:25', text: '[Instagram DM] @selin_kaya, Saat 5 (17:00) için randevu oluşturdu.' },
+        { id: 1, time: '14:10', text: '[WhatsApp] Mehmet Yılmaz (0532 111 22 33), Saat 4 (16:00) için randevu oluşturdu.' },
+      ],
+    };
+    let authMode = 'register';
+
+    function showPage(pageId) {
+      document.getElementById('page-landing').style.display = pageId === 'landing' ? 'block' : 'none';
+      document.getElementById('page-auth').style.display = pageId === 'auth' ? 'block' : 'none';
+      document.getElementById('page-dashboard').style.display = pageId === 'dashboard' ? 'block' : 'none';
+      window.scrollTo(0, 0);
+    }
+
+    function openAuthPage(mode, planId) {
+      switchAuthTab(mode);
+      if (planId) document.getElementById('authPlanSelect').value = planId;
+      showPage('auth');
+    }
+
+    function switchAuthTab(mode) {
+      authMode = mode;
+      document.getElementById('tabBtnRegister').className = mode === 'register' ? 'btn btn-primary' : 'btn btn-outline';
+      document.getElementById('tabBtnLogin').className = mode === 'login' ? 'btn btn-primary' : 'btn btn-outline';
+      document.getElementById('registerFields').style.display = mode === 'register' ? 'block' : 'none';
+      document.getElementById('authSubmitBtn').textContent = mode === 'register' ? 'Hesabı Oluştur ve Panele Geç' : 'Yönetim Paneline Giriş Yap';
+    }
+
+    async function submitAuthForm() {
+      const biz = document.getElementById('authBizName').value.trim();
+      if (biz) currentUser.businessName = biz;
+      renderAll();
+      showPage('dashboard');
+    }
+
+    function goToDashboardDirect() {
+      loadMe().finally(() => {
+        renderAll();
+        showPage('dashboard');
+      });
+    }
+
+    async function loadMe() {
+      try {
+        const res = await fetch('/api/me');
+        const data = await res.json();
+        if (data.ok && data.user) {
+          currentUser = data.user;
+          renderAll();
+        }
+      } catch (_) {
+        renderAll();
+      }
+    }
+
+    function openTab(tabId, btnEl) {
+      document.querySelectorAll('.view-section').forEach((s) => s.classList.remove('active'));
+      document.querySelectorAll('.dash-nav button').forEach((b) => b.classList.remove('active'));
+      document.getElementById('view-' + tabId).classList.add('active');
+      if (btnEl) btnEl.classList.add('active');
+    }
+
+    function getPlatLabel(plat) {
+      if (plat === 'instagram') return 'Instagram';
+      if (plat === 'tiktok') return 'TikTok';
+      if (plat === 'phone_call') return 'Telefon Araması';
+      if (plat === 'manual') return 'Kapalı';
+      return 'WhatsApp';
+    }
+
+    function stripEmojis(str = '') {
+      return String(str).replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+    }
+
+    function renderAll() {
+      document.getElementById('sideBizName').textContent = currentUser.businessName || 'İşletme Paneli';
+      document.getElementById('bizNameInput').value = currentUser.businessName || '';
+      document.getElementById('autoReplyInput').value = currentUser.autoReplyText || '';
+
+      const slotsGrid = document.getElementById('slotsGrid');
+      slotsGrid.innerHTML = (currentUser.slots || [])
+        .map(
+          (s) => `
+        <div class="slot-item ${s.status}" onclick="toggleSlot('${s.key}')">
+          <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px;">
+            <span>Saat ${s.shortHour} (${s.time24})</span>
+            <span style="color:${s.status === 'busy' ? 'var(--red)' : 'var(--green)'};">${s.status === 'busy' ? 'DOLU' : 'BOŞ'}</span>
+          </div>
+          <div style="font-size:0.8rem; color:var(--slate);">
+            ${s.status === 'busy' ? `${getPlatLabel(s.platform)} - ${s.bookedBy || 'Dolu'}` : 'Müsait - Randevuya Açık'}
+          </div>
+        </div>
+      `
+        )
+        .join('');
+
+      const notifs = currentUser.notifications || [];
+      document.getElementById('notifCountBadge').textContent = notifs.length;
+      document.getElementById('notificationsList').innerHTML = notifs
+        .map(
+          (n) => `
+        <div class="notif-item">
+          <span>${stripEmojis(n.text)}</span>
+          <span style="color:var(--muted); font-size:0.8rem;">${n.time}</span>
+        </div>
+      `
+        )
+        .join('');
+    }
+
+    async function toggleSlot(slotKey) {
+      try {
+        const res = await fetch('/api/slots/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slotKey }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          currentUser = data.user;
+          renderAll();
+          return;
+        }
+      } catch (_) {}
+      const slot = currentUser.slots.find((s) => s.key === String(slotKey));
+      if (slot) {
+        slot.status = slot.status === 'busy' ? 'free' : 'busy';
+        slot.bookedBy = slot.status === 'busy' ? 'İşletme Kapattı' : null;
+        slot.platform = slot.status === 'busy' ? 'manual' : null;
+        renderAll();
+      }
+    }
+
+    async function quickWebhookTest(platform, senderName, senderPhone, text) {
+      const banner = document.getElementById('quickTestResultBanner');
+      banner.style.display = 'block';
+      try {
+        const res = await fetch(`/api/webhooks/${platform}/${currentUser.id || 'u_905525222988'}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderName, senderPhone, text }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          currentUser = data.user;
+          renderAll();
+          banner.textContent = stripEmojis(data.outcome?.notifText || 'Randevu işlendi.');
+          return;
+        }
+      } catch (_) {}
+      const m = text.match(/([1-8])/);
+      if (m) {
+        const sl = currentUser.slots.find((s) => s.key === m[1]);
+        if (sl) {
+          sl.status = 'busy';
+          sl.bookedBy = senderName;
+          sl.platform = platform;
+          const now = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+          const msg = `[${getPlatLabel(platform)}] ${senderName}, Saat ${sl.shortHour} (${sl.time24}) için randevu oluşturdu.`;
+          currentUser.notifications.unshift({ id: Date.now(), time: now, text: msg });
+          renderAll();
+          banner.textContent = msg;
+        }
+      }
+    }
+
+    async function quickVoiceCallBook(transcript) {
+      const banner = document.getElementById('quickTestResultBanner');
+      banner.style.display = 'block';
+      try {
+        const res = await fetch('/api/voice-call/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callerName: 'Murat Kaya', callerPhone: '05443332211', transcript, isStart: false }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          currentUser = data.user;
+          renderAll();
+          banner.textContent = `Sesli Temsilci: "${data.spokenText}"`;
+          if (data.audioBase64) new Audio(data.audioBase64).play().catch(() => {});
+          return;
+        }
+      } catch (_) {}
+      quickWebhookTest('phone_call', 'Murat Kaya', '05443332211', transcript);
+    }
+
+    async function startLiveAiCall() {
+      document.getElementById('callTranscriptBox').innerHTML = '';
+      await sendVoiceTurn('', true);
+    }
+
+    async function sendVoiceTurn(transcript, isStart = false) {
+      const box = document.getElementById('callTranscriptBox');
+      const callerName = document.getElementById('callerNameInput').value.trim() || 'Ahmet Yılmaz';
+      const callerPhone = document.getElementById('callerPhoneInput').value.trim() || '05358889900';
+      if (!isStart && transcript) {
+        box.innerHTML += `<div><strong>${callerName}:</strong> ${transcript}</div>`;
+      }
+      try {
+        const res = await fetch('/api/voice-call/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callerName, callerPhone, transcript, isStart }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          box.innerHTML += `<div style="color:var(--primary-dark);"><strong>OP AI Temsilci:</strong> ${data.spokenText}</div>`;
+          if (data.audioBase64) {
+            const player = document.getElementById('aiCallAudioPlayer');
+            player.src = data.audioBase64;
+            player.style.display = 'block';
+            player.play().catch(() => {});
+          }
+          if (data.user) {
+            currentUser = data.user;
+            renderAll();
+          }
+          return;
+        }
+      } catch (_) {}
+      box.innerHTML += `<div style="color:var(--primary-dark);"><strong>OP AI Temsilci:</strong> Merhabalar, şu anda Saat 4 ve 5 dolu; Saat 1, 2, 3 ve 6 boş durumda. İstediğiniz saati söyleyebilirsiniz.</div>`;
+    }
+
+    async function connectWhatsApp(mode) {
+      const phone = document.getElementById('waPhoneInput').value.trim();
+      const box = document.getElementById('waConnectResult');
+      const txt = document.getElementById('waConnectText');
+      box.style.display = 'block';
+      txt.textContent = 'WhatsApp oturumu başlatılıyor...';
+      try {
+        await fetch('/api/whatsapp/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, phone }),
+        });
+      } catch (_) {}
+    }
+
+    async function saveChannelSettings() {
+      alert('Ayarlarınız kaydedildi.');
+    }
+
+    loadMe();
+  </script>
+</body>
+</html>
