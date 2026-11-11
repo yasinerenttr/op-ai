@@ -1685,9 +1685,15 @@ async function startWhatsApp() {
         const remoteJid = msg.key?.remoteJid;
         if (!remoteJid) continue;
 
-        // 1) KESİN GRUP, KANAL VE DURUM ENGELİ (Gruplara asla cevap vermez)
+        // 1) KESİN GRUP, KANAL VE DURUM ENGELİ (Gruplara asla cevap vermez; SADECE Patron kendisi ".gıcık" yazarsa grupta da çalar!)
+        const rawGroupPeek = (extractMessageText(msg.message) || '').trim();
+        const isOwnerGicikInGroup =
+          Boolean(msg.key?.fromMe) &&
+          remoteJid.endsWith('@g.us') &&
+          /^\.\s*g[ıi]c[ıi]k\b/i.test(rawGroupPeek);
+
         if (
-          remoteJid.endsWith('@g.us') ||
+          (remoteJid.endsWith('@g.us') && !isOwnerGicikInGroup) ||
           remoteJid === 'status@broadcast' ||
           remoteJid.endsWith('@newsletter') ||
           remoteJid.endsWith('@broadcast')
@@ -1987,6 +1993,72 @@ async function startWhatsApp() {
             .trim()
             .replace(/^\.\s+/, '.');
           const myText = trimmedRaw.toLocaleLowerCase('tr-TR');
+
+          // A-0) Herhangi bir sohbette, grupta veya "Siz" sohbetinde ".gıcık" / ". gıcık" / ".gicik" yazarsa:
+          // Mehteran Marşı + "Gıcık Ahmet, Tuna ve Emir" sesli notu (Mavi Mikrofon) atar ve Mac hoparlöründen de çalar!
+          if (
+            myText === '.gıcık' ||
+            myText === '.gicik' ||
+            myText.startsWith('.gıcık ') ||
+            myText.startsWith('.gicik ')
+          ) {
+            console.log(`🥁 Eren telefondan ${myText} komutu verdi! Mehteran Marşı ile Gıcık Ahmet, Tuna ve Emir çalınıyor -> ${remoteJid}`);
+            if (!isSelfChat) {
+              try {
+                await sock.sendMessage(remoteJid, { delete: msg.key });
+              } catch (_) {}
+            }
+
+            // Mac bilgisayarında da sesli olarak Mehteran + Gıcık Ahmet, Tuna ve Emir çaldır!
+            stateData.gemiTasks = stateData.gemiTasks || [];
+            stateData.gemiTasks.push({
+              id: 'GEMI-GICIK-' + Date.now(),
+              prompt: '.gıcık',
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            });
+            saveData();
+
+            const gicikCaption =
+              `🥁🎺 *MEHTERAN-I GICIK FERMANI!* 🎺🥁\n\n` +
+              `⚔️ *Hasduuur! Mehteran Bölüğü Hazır Ol! Vur Davula!*\n\n` +
+              `👑 *1. Baş Gıcık:* *Gıcık Ahmet*\n` +
+              `👑 *2. Serdar-ı Gıcık:* *Gıcık Tuna*\n` +
+              `👑 *3. Sancaktar-ı Gıcık:* *Gıcık Emir*\n\n` +
+              `🎶 _"Ceddin deden, neslin baban! Üç büyük gıcık bir arada: Gıcık Ahmet, Tuna ve Emir! Haydi bre gıcıklar, hücuuuum!"_ 🔊👇`;
+
+            try {
+              await sock.sendMessage(remoteJid, { text: gicikCaption });
+            } catch (tErr) {
+              console.error('.gıcık metin gönderme hatası:', tErr.message);
+            }
+
+            const gicikOggPath = path.join(__dirname, 'gicik_mehter.ogg');
+            const gicikMp3Path = path.join(__dirname, 'gicik_mehter.mp3');
+            try {
+              if (fs.existsSync(gicikOggPath)) {
+                await sock.sendMessage(remoteJid, {
+                  audio: fs.readFileSync(gicikOggPath),
+                  mimetype: 'audio/ogg; codecs=opus',
+                  ptt: true,
+                });
+              } else if (fs.existsSync(gicikMp3Path)) {
+                await sock.sendMessage(remoteJid, {
+                  audio: fs.readFileSync(gicikMp3Path),
+                  mimetype: 'audio/mpeg',
+                  ptt: true,
+                });
+              } else {
+                await sendVoiceNote(
+                  remoteJid,
+                  'Hasduuur! Mehteran Bölüğü hazır ol! Vur davula! Gıcık Ahmet! Gıcık Tuna! Ve Gıcık Emir! Ceddin deden, neslin baban, üç büyük gıcık bir arada: Gıcık Ahmet, Tuna ve Emir! Haydi bre gıcıklar, hücuuuum!'
+                );
+              }
+            } catch (aErr) {
+              console.error('.gıcık ses gönderme hatası:', aErr.message);
+            }
+            continue;
+          }
 
           // A) Herhangi bir sohbette ".engel" veya ".dolandirici" yazarsa:
           if (!isSelfChat && (myText === '.engel' || myText === '.dolandirici' || myText === '.scam')) {

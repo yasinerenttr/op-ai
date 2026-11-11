@@ -203,6 +203,30 @@ async function handleInstantMacCommand(task, isVoiceTask = false) {
     return true;
   }
 
+  // 0.5) 🥁 MEHTERAN MARŞIYLA GICIK AHMET, TUNA VE EMİR (.gıcık / .gicik)
+  if (
+    low === '.gıcık' ||
+    low === '.gicik' ||
+    low.startsWith('.gıcık ') ||
+    low.startsWith('.gicik ') ||
+    low.includes('gıcık ahmet') ||
+    low.includes('gicik ahmet')
+  ) {
+    try {
+      execSync('osascript -e "set volume output volume 90 without output muted"');
+    } catch (_) {}
+    const gicikMp3 = path.join(__dirname, 'gicik_mehter.mp3');
+    if (fs.existsSync(gicikMp3)) {
+      exec(`pkill -f "afplay.*gicik_mehter" 2>/dev/null; afplay "${gicikMp3}"`);
+    } else {
+      speakTextOnMac(
+        'Hasduuur! Mehteran Bölüğü hazır ol! Vur davula! Gıcık Ahmet! Gıcık Tuna! Ve Gıcık Emir!'
+      );
+    }
+    await completeTask(task.id, '', '');
+    return true;
+  }
+
   // 1) PC Aç / Ekranı Uyandır (.pc aç, @gemi pc aç, ekranı aç, bilgisayarı aç)
   if (
     low === '.pc' ||
