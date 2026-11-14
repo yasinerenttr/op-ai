@@ -750,7 +750,16 @@
                 <button id="igConnectBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#833ab4,#e1306c,#f77737); border:none;" onclick="saveInstagramAccount()">📸 Instagram Hesabını Bağla</button>
                 <button id="igDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectInstagram()">Bağlantıyı Kes</button>
               </div>
-              <p style="font-size:0.82rem; color:var(--muted); margin-bottom:6px;">Instagram DM Webhook URL Adresiniz:</p>
+              <div style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;">
+                <label class="label" style="margin-bottom:6px; font-size:0.82rem;">💬 Canlı Instagram DM Mesajı Gönder / Test Et:</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <input type="text" id="igTestSenderInput" class="input" style="max-width:150px; margin-bottom:0; font-size:0.84rem;" value="@müsteri_ig" placeholder="Gönderen (@kisi)" />
+                  <input type="text" id="igTestMsgInput" class="input" style="flex:1; margin-bottom:0; font-size:0.84rem;" placeholder="Örn: Merhaba bugün saat 4 boş mu? / Fiyatlar nedir?" onkeydown="if(event.key==='Enter') sendLiveDmTest('instagram')" />
+                  <button class="btn btn-primary" style="font-size:0.84rem;" onclick="sendLiveDmTest('instagram')">DM Gönder</button>
+                </div>
+                <div id="igTestReplyBox" style="display:none; margin-top:10px; padding:10px; border-radius:6px; background:#fdf2f8; border:1px solid #fbcfe8; color:#831843; font-size:0.84rem; white-space:pre-wrap;"></div>
+              </div>
+              <p style="font-size:0.82rem; color:var(--muted); margin-bottom:6px;">Instagram DM Webhook URL Adresiniz (ManyChat / Meta Webhook):</p>
               <code id="igWebhookUrl" style="display:block; padding:10px; background:#f1f5f9; border-radius:6px; word-break:break-all; font-size:0.82rem;">...</code>
             </div>
           </div>
@@ -764,6 +773,15 @@
                 <input type="text" id="tiktokUsernameInput" class="input" style="flex:1; max-width:260px; margin-bottom:0;" name="tiktok_handle_nofill" autocomplete="off" placeholder="TikTok Kullanıcı Adı (@isletme)" />
                 <button class="btn btn-primary" onclick="saveTikTokAccount()">Hesabı Kaydet</button>
                 <button id="tiktokDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectTikTok()">Bağlantıyı Kes</button>
+              </div>
+              <div style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;">
+                <label class="label" style="margin-bottom:6px; font-size:0.82rem;">💬 Canlı TikTok DM Mesajı Gönder / Test Et:</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <input type="text" id="ttTestSenderInput" class="input" style="max-width:150px; margin-bottom:0; font-size:0.84rem;" value="@müsteri_tt" placeholder="Gönderen (@kisi)" />
+                  <input type="text" id="ttTestMsgInput" class="input" style="flex:1; margin-bottom:0; font-size:0.84rem;" placeholder="Örn: Selam saat 5 randevu alabilir miyim?" onkeydown="if(event.key==='Enter') sendLiveDmTest('tiktok')" />
+                  <button class="btn btn-primary" style="font-size:0.84rem;" onclick="sendLiveDmTest('tiktok')">DM Gönder</button>
+                </div>
+                <div id="ttTestReplyBox" style="display:none; margin-top:10px; padding:10px; border-radius:6px; background:#f1f5f9; border:1px solid #cbd5e1; color:#0f172a; font-size:0.84rem; white-space:pre-wrap;"></div>
               </div>
               <p style="font-size:0.82rem; color:var(--muted); margin-bottom:6px;">TikTok Developer Webhook URL Adresiniz:</p>
               <code id="tiktokWebhookUrl" style="display:block; padding:10px; background:#f1f5f9; border-radius:6px; word-break:break-all; font-size:0.82rem;">...</code>
@@ -1808,6 +1826,54 @@
         if (vw && d.voiceWebhookUrl) vw.textContent = d.voiceWebhookUrl;
         renderTikTokStatus();
       } catch (_) { }
+    }
+
+    async function sendLiveDmTest(platform) {
+      const isIg = platform === 'instagram';
+      const senderInput = document.getElementById(isIg ? 'igTestSenderInput' : 'ttTestSenderInput');
+      const msgInput = document.getElementById(isIg ? 'igTestMsgInput' : 'ttTestMsgInput');
+      const replyBox = document.getElementById(isIg ? 'igTestReplyBox' : 'ttTestReplyBox');
+
+      const senderName = (senderInput?.value || (isIg ? '@musteri_ig' : '@musteri_tt')).trim();
+      const text = (msgInput?.value || '').trim();
+      if (!text) {
+        alert('Lütfen göndermek istediğiniz DM mesajını yazın.');
+        return;
+      }
+
+      if (replyBox) {
+        replyBox.style.display = 'block';
+        replyBox.textContent = '⏳ OP AI Operatörü mesajı inceliyor ve yanıtlıyor...';
+      }
+
+      try {
+        const res = await apiFetch('/api/chat/simulate', {
+          method: 'POST',
+          body: JSON.stringify({
+            platform,
+            senderName,
+            senderPhone: senderName,
+            text,
+            playVoice: false,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (data.user) {
+            currentUser = data.user;
+            renderAll();
+          }
+          const replyText = data.outcome?.replyText || data.outcome?.voiceText || 'Mesajınız alındı.';
+          if (replyBox) {
+            replyBox.innerHTML = `<strong>👤 Müşteri (${escapeHtml(senderName)}):</strong> ${escapeHtml(text)}\n\n<strong>🤖 OP AI (${escapeHtml(currentUser.businessName || 'İşletme')}):</strong>\n${escapeHtml(replyText)}`;
+          }
+          if (msgInput) msgInput.value = '';
+        } else {
+          if (replyBox) replyBox.textContent = '❌ Hata: ' + (data.error || 'Yanıt alınamadı.');
+        }
+      } catch (e) {
+        if (replyBox) replyBox.textContent = '❌ Sunucu hatası: ' + e.message;
+      }
     }
 
     async function saveInstagramAccount() {
