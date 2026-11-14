@@ -1,0 +1,119 @@
+{
+  "user_905525222988": {
+    "id": "user_905525222988",
+    "ownerName": "Eren VIP Studio",
+    "phone": "905525222988",
+    "profession": "executive",
+    "botName": "Avelon",
+    "voice": "tr-TR-EmelNeural",
+    "enabled": true,
+    "firstReplyText": "Merhabalar, ben {BOT_NAME} 🤖 {OWNER_NAME} adına görev yapan Yapay Zeka Özel Kalem ve Yönetici Sekreteriyim.\n\nNumaranız özel rehberde kayıtlı görünmüyor; lütfen isminizi ve hangi konuda görüşmek istediğinizi yazın. Sizi randevu sırasına alıp hemen {OWNER_NAME} tarafına ileteceğim.",
+    "knownReplyText": "Merhabalar, ben {BOT_NAME} 🤖 {OWNER_NAME} şu an toplantıda/yoğun olduğu için mesajınızı kendisine öncelikli olarak ilettim; müsait olduğunda size dönüş sağlayacaktır.",
+    "voiceIntroText": "Merhabalar, ben {OWNER_NAME} özel kalem sekreteri {BOT_NAME}. Bilgilerinizi ve talebinizi kaydettim, size {SLOT} için {QUEUE} numaralı randevu sırası oluşturdum.",
+    "workHours": [
+      "10:00",
+      "11:00",
+      "13:30",
+      "15:00",
+      "16:30",
+      "18:00"
+    ],
+    "appointments": [
+      {
+        "id": 101,
+        "code": "AVL-101",
+        "customerName": "Ahmet Demir (Örnek Randevu)",
+        "customerPhone": "905320000000",
+        "note": "Merhaba, yarın öğleden sonra görüşme için randevu alabilir miyim?",
+        "fullSlotLabel": "Yarın Saat 15:00",
+        "status": "pending",
+        "createdAt": "2026-11-09T12:07:36.985Z"
+      }
+    ],
+    "visitors": {},
+    "createdAt": "2026-11-09T12:07:36.985Z",
+    "slots": [
+      {
+        "key": "1",
+        "label": "Saat 01:00 (13:00)",
+        "shortHour": "1",
+        "time24": "13:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      },
+      {
+        "key": "2",
+        "label": "Saat 02:00 (14:00)",
+        "shortHour": "2",
+        "time24": "14:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      },
+      {
+        "key": "3",
+        "label": "Saat 03:00 (15:00)",
+        "shortHour": "3",
+        "time24": "15:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      },
+      {
+        "key": "4",
+        "label": "Saat 04:00 (16:00)",
+        "shortHour": "4",
+        "time24": "16:00",
+        "status": "busy",
+        "bookedBy": "Mehmet Yılmaz",
+        "bookedPhone": "905321112233",
+        "platform": "whatsapp"
+      },
+      {
+        "key": "5",
+        "label": "Saat 05:00 (17:00)",
+        "shortHour": "5",
+        "time24": "17:00",
+        "status": "busy",
+        "bookedBy": "Caner Kaya",
+        "bookedPhone": "905442223344",
+        "platform": "instagram"
+      },
+      {
+        "key": "6",
+        "label": "Saat 06:00 (18:00)",
+        "shortHour": "6",
+        "time24": "18:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      },
+      {
+        "key": "7",
+        "label": "Saat 07:00 (19:00)",
+        "shortHour": "7",
+        "time24": "19:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      },
+      {
+        "key": "8",
+        "label": "Saat 08:00 (20:00)",
+        "shortHour": "8",
+        "time24": "20:00",
+        "status": "free",
+        "bookedBy": null,
+        "bookedPhone": null,
+        "platform": null
+      }
+    ],
+    "planId": "omni_1490"
+  }
+}

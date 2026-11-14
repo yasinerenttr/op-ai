@@ -1,0 +1,475 @@
+{
+  "users": {
+    "u_905525222988": {
+      "id": "u_905525222988",
+      "businessName": "Eren VIP Kuaför & Güzellik Merkezi",
+      "ownerName": "Eren",
+      "phone": "905525222988",
+      "email": "tataryasineren@gmail.com",
+      "passwordHash": "f184574ee84b7f661f09f1377f6d43c94c386d28f1aa1cfd2427846c08cf5d9c",
+      "planId": "vip_2490",
+      "voice": "tr-TR-AhmetNeural",
+      "botEnabled": true,
+      "sectorId": "kuafor",
+      "sectorName": "Kuaför & Güzellik Merkezi",
+      "operatorTone": "kurumsal",
+      "servicesText": "VIP Saç Kesimi: 400 TL\nSakal Tıraşı & Bakım: 250 TL\nCilt Bakımı & Maske: 450 TL\nSaç & Sakal VIP Paket: 600 TL",
+      "locationText": "Bağdat Caddesi No: 42 Kadıköy / İstanbul",
+      "workingHoursText": "Hafta içi ve Cumartesi 10:00 - 20:00, Pazar 11:00 - 18:00",
+      "callGreetingText": "Alo, merhabalar! Eren VIP Kuaför & Güzellik Merkezi sesli asistanıyım. Size nasıl yardımcı olabilirim?",
+      "autoReplyText": "Merhabalar, Eren VIP Kuaför & Güzellik Merkezi hattına hoş geldiniz. Randevu ve bilgi talepleriniz için yapay zeka asistanımız 7/24 hizmetinizdedir.",
+      "waCallAutoAnswer": true,
+      "forwardingPhone": "0850 309 67 24",
+      "slots": [
+        {
+          "key": "1",
+          "shortHour": "1",
+          "time24": "13:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "2",
+          "shortHour": "2",
+          "time24": "14:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "3",
+          "shortHour": "3",
+          "time24": "15:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "4",
+          "shortHour": "4",
+          "time24": "16:00",
+          "status": "busy",
+          "bookedBy": "Mehmet Yılmaz",
+          "bookedPhone": "05321112233",
+          "platform": "whatsapp"
+        },
+        {
+          "key": "5",
+          "shortHour": "5",
+          "time24": "17:00",
+          "status": "busy",
+          "bookedBy": "@selin_kaya",
+          "bookedPhone": "Instagram DM",
+          "platform": "instagram"
+        },
+        {
+          "key": "6",
+          "shortHour": "6",
+          "time24": "18:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "7",
+          "shortHour": "7",
+          "time24": "19:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "8",
+          "shortHour": "8",
+          "time24": "20:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        }
+      ],
+      "appointments": [
+        {
+          "id": 1001,
+          "code": "RNV-400",
+          "slotKey": "4",
+          "time24": "16:00",
+          "customerName": "Mehmet Yılmaz",
+          "customerPhone": "05321112233",
+          "platform": "whatsapp",
+          "status": "approved",
+          "createdAt": "14:10"
+        },
+        {
+          "id": 1002,
+          "code": "RNV-500",
+          "slotKey": "5",
+          "time24": "17:00",
+          "customerName": "@selin_kaya",
+          "customerPhone": "Instagram DM",
+          "platform": "instagram",
+          "status": "approved",
+          "createdAt": "14:25"
+        }
+      ],
+      "notifications": [
+        {
+          "id": 1002,
+          "time": "14:25",
+          "platform": "instagram",
+          "text": "🔔 [Instagram DM] @selin_kaya, Saat 5 (17:00) için randevu oluşturdu!"
+        },
+        {
+          "id": 1001,
+          "time": "14:10",
+          "platform": "whatsapp",
+          "text": "🔔 [WhatsApp] Mehmet Yılmaz (05321112233), Saat 4 (16:00) için randevu oluşturdu!"
+        }
+      ],
+      "channels": {
+        "whatsapp": {
+          "connected": false,
+          "phone": "905525222988"
+        },
+        "instagram": {
+          "connected": false,
+          "username": "",
+          "accessToken": "",
+          "pageId": ""
+        },
+        "tiktok": {
+          "connected": false,
+          "username": "",
+          "accessToken": ""
+        }
+      },
+      "createdAt": "2026-11-09T12:41:00.457Z"
+    },
+    "u_mail_probe_test_1794681496930_testdomain_com": {
+      "id": "u_mail_probe_test_1794681496930_testdomain_com",
+      "ownerName": "Probe Inspector",
+      "businessName": "Probe Test Salon",
+      "phone": "",
+      "email": "probe_test_1794681496930@testdomain.com",
+      "kvkkApproved": true,
+      "kvkkApprovedAt": "2026-11-14T18:38:16.937Z",
+      "passwordHash": "2ed5c0bec4b5334746857a3e9ddce0165b3345df25e1c8530a16b7fcc4baad05",
+      "planId": "omni_1490",
+      "voice": "tr-TR-AhmetNeural",
+      "botEnabled": true,
+      "autoReplyText": "Merhabalar, *Probe Test Salon* hattına ulaştınız. Size en kısa sürede dönüş yapacağız.",
+      "slots": [
+        {
+          "key": "1",
+          "shortHour": "1",
+          "time24": "13:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "2",
+          "shortHour": "2",
+          "time24": "14:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "3",
+          "shortHour": "3",
+          "time24": "15:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "4",
+          "shortHour": "4",
+          "time24": "16:00",
+          "status": "busy",
+          "bookedBy": "Mehmet Yılmaz",
+          "bookedPhone": "905321112233",
+          "platform": "whatsapp"
+        },
+        {
+          "key": "5",
+          "shortHour": "5",
+          "time24": "17:00",
+          "status": "busy",
+          "bookedBy": "@selin_kaya",
+          "bookedPhone": "Instagram DM",
+          "platform": "instagram"
+        },
+        {
+          "key": "6",
+          "shortHour": "6",
+          "time24": "18:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "7",
+          "shortHour": "7",
+          "time24": "19:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "8",
+          "shortHour": "8",
+          "time24": "20:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        }
+      ],
+      "appointments": [],
+      "notifications": [],
+      "channels": {
+        "whatsapp": {
+          "connected": false,
+          "phone": ""
+        },
+        "instagram": {
+          "connected": false,
+          "username": "",
+          "accessToken": "",
+          "pageId": ""
+        },
+        "tiktok": {
+          "connected": false,
+          "username": "",
+          "accessToken": ""
+        }
+      },
+      "createdAt": "2026-11-14T18:38:16.937Z",
+      "sectorId": "kuafor",
+      "sectorName": "Kuaför & Güzellik Merkezi",
+      "operatorTone": "kurumsal",
+      "servicesText": "VIP Saç Kesimi: 400 TL\nSakal Tıraşı & Bakım: 250 TL\nCilt Bakımı & Maske: 450 TL\nSaç & Sakal VIP Paket: 600 TL",
+      "locationText": "Bağdat Caddesi No: 42 Kadıköy / İstanbul",
+      "workingHoursText": "Hafta içi ve Cumartesi 10:00 - 20:00, Pazar 11:00 - 18:00",
+      "callGreetingText": "Alo, merhabalar! Probe Test Salon sesli asistanıyım. Size nasıl yardımcı olabilirim?",
+      "waCallAutoAnswer": true,
+      "forwardingPhone": "0850 309 67 24"
+    },
+    "u_mail_pasted_mail_1794681593379_example_com": {
+      "id": "u_mail_pasted_mail_1794681593379_example_com",
+      "ownerName": "",
+      "businessName": "Pasted Mail Auto Fallback",
+      "phone": "",
+      "email": "pasted_mail_1794681593379@example.com",
+      "kvkkApproved": true,
+      "kvkkApprovedAt": "2026-11-14T18:39:53.380Z",
+      "passwordHash": "2d61cf5d6abb401a2724d82db6286e516e67cb967e12e531877548a88490bdff",
+      "planId": "omni_1490",
+      "voice": "tr-TR-AhmetNeural",
+      "botEnabled": true,
+      "autoReplyText": "Merhabalar, *Pasted Mail Auto Fallback* hattına ulaştınız. Size en kısa sürede dönüş yapacağız.",
+      "slots": [
+        {
+          "key": "1",
+          "shortHour": "1",
+          "time24": "13:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "2",
+          "shortHour": "2",
+          "time24": "14:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "3",
+          "shortHour": "3",
+          "time24": "15:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "4",
+          "shortHour": "4",
+          "time24": "16:00",
+          "status": "busy",
+          "bookedBy": "Mehmet Yılmaz",
+          "bookedPhone": "905321112233",
+          "platform": "whatsapp"
+        },
+        {
+          "key": "5",
+          "shortHour": "5",
+          "time24": "17:00",
+          "status": "busy",
+          "bookedBy": "@selin_kaya",
+          "bookedPhone": "Instagram DM",
+          "platform": "instagram"
+        },
+        {
+          "key": "6",
+          "shortHour": "6",
+          "time24": "18:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "7",
+          "shortHour": "7",
+          "time24": "19:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        },
+        {
+          "key": "8",
+          "shortHour": "8",
+          "time24": "20:00",
+          "status": "free",
+          "bookedBy": null,
+          "bookedPhone": null,
+          "platform": null
+        }
+      ],
+      "appointments": [],
+      "notifications": [],
+      "channels": {
+        "whatsapp": {
+          "connected": false,
+          "phone": ""
+        },
+        "instagram": {
+          "connected": false,
+          "username": "",
+          "accessToken": "",
+          "pageId": ""
+        },
+        "tiktok": {
+          "connected": false,
+          "username": "",
+          "accessToken": ""
+        }
+      },
+      "createdAt": "2026-11-14T18:39:53.380Z",
+      "sectorId": "kuafor",
+      "sectorName": "Kuaför & Güzellik Merkezi",
+      "operatorTone": "kurumsal",
+      "servicesText": "VIP Saç Kesimi: 400 TL\nSakal Tıraşı & Bakım: 250 TL\nCilt Bakımı & Maske: 450 TL\nSaç & Sakal VIP Paket: 600 TL",
+      "locationText": "Bağdat Caddesi No: 42 Kadıköy / İstanbul",
+      "workingHoursText": "Hafta içi ve Cumartesi 10:00 - 20:00, Pazar 11:00 - 18:00",
+      "callGreetingText": "Alo, merhabalar! Pasted Mail Auto Fallback sesli asistanıyım. Size nasıl yardımcı olabilirim?",
+      "waCallAutoAnswer": true,
+      "forwardingPhone": "0850 309 67 24"
+    }
+  },
+  "tokens": {
+    "89889bf57ce89a6d048af42970d8f1b1055a07770bf5d2d5": "u_905525222988",
+    "7b73a2636f102b5e8bc167630e79ae4508721c233865a22d": "u_905525222988",
+    "f8fd5b4baea0ec10bf20ff9ce9ffdf9dd4d9d1eacc63b77f": "u_905525222988",
+    "bbd380c08db63996ebf7342bd704c04ad665a2f79236f18e": "u_905525222988",
+    "19fd6a7b7e221fea171029851bb16cfff7622ebeae59b803": "u_905525222988",
+    "b87853a25a36d074b5053118d52fe5338c7e7d647067d008": "u_905525222988",
+    "a023a472415a123258e80c416720220d1aa89123664a1f27": "u_905525222988",
+    "96e0cf3e84270cf74e935590a34880960e781b0ad8c1a881": "u_905525222988",
+    "4e99d4bc077cb7c15b7b91b453db6689f5f15158cf561102": "u_905525222988",
+    "279467e232ce3bad05c505306069a386fbe36afb6b164256": "u_mail_probe_test_1794681496930_testdomain_com",
+    "36051e2b66529b70cf4b8d9de9312a74dad321cd0f14dadd": "u_mail_probe_test_1794681496930_testdomain_com",
+    "c0aa310d443a71b7e4764c213dab9183139a0e3f3327ca42": "u_mail_pasted_mail_1794681593379_example_com"
+  },
+  "verificationCodes": {
+    "test_worker_m3@opai.app": {
+      "code": "511980",
+      "expiresAt": 1794681619910,
+      "verified": true
+    },
+    "verify_test_1794681245482@opai.app": {
+      "code": "758879",
+      "expiresAt": 1794681845485,
+      "verified": true
+    },
+    "probe_test_1794681496930@testdomain.com": {
+      "code": "898084",
+      "expiresAt": 1794682096931,
+      "verified": true
+    },
+    "probe_emp_1794681574486@opai-test.io": {
+      "code": "494887",
+      "expiresAt": 1794682174511,
+      "verified": true
+    },
+    "mixed_case_1794681593374@domain.com": {
+      "code": "200272",
+      "expiresAt": 1794682193376,
+      "verified": true
+    },
+    "probe_audit_1794681608267@opai.app": {
+      "code": "978547",
+      "expiresAt": 1794682208268,
+      "verified": true
+    },
+    "adv_probe_1794681611794@opai-test.io": {
+      "code": "403312",
+      "expiresAt": 1794682214778,
+      "verified": true
+    },
+    "test_otp_user@testdomain.com": {
+      "code": "877104",
+      "expiresAt": 1794682581382,
+      "verified": true
+    },
+    "opai_tenant_a_1794682192974@e2e-test.com": {
+      "code": "870203",
+      "expiresAt": 1794682793020,
+      "verified": true
+    },
+    "opai_tenant_a_1794682208147@e2e-test.com": {
+      "code": "592229",
+      "expiresAt": 1794682808190,
+      "verified": true
+    },
+    "opai_tenant_a_1794682226164@e2e-test.com": {
+      "code": "517207",
+      "expiresAt": 1794682826204,
+      "verified": true
+    },
+    "opai_tenant_a_1794682416155@e2e-test.com": {
+      "code": "603366",
+      "expiresAt": 1794683016204,
+      "verified": true
+    },
+    "opai_tenant_a_1794682422846@e2e-test.com": {
+      "code": "535824",
+      "expiresAt": 1794683022887,
+      "verified": true
+    },
+    "probe_auditor_x_1794682537947@test.com": {
+      "code": "505459",
+      "expiresAt": 1794683137948,
+      "verified": true
+    }
+  }
+}

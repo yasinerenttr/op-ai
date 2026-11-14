@@ -17,6 +17,9 @@ import { exec, execSync } from 'child_process';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import ffmpegStatic from 'ffmpeg-static';
 
+process.env.OPAI_EMBEDDED = '1';
+import { opaiApp, startOpaiBackgroundSessions } from './opai-saas/server.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -3370,12 +3373,19 @@ async function startWhatsApp() {
 
 // ================= WEB KONTROL PANELİ & SİBER KALKAN (PORT 4040) =================
 const app = express();
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '15mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: false }));
 
 const blockedIps = new Map();
 const failedPinAttempts = new Map();
 
 app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
@@ -3721,7 +3731,11 @@ app.post('/api/outreach-call', async (req, res) => {
   }
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', (req, res, next) => {
+  // OP AI SaaS kullanıcısı (Bearer token ile geliyorsa) opaiApp'e yönlendir
+  if (req.headers.authorization || req.body?.businessName !== undefined || req.body?.sectorId !== undefined || req.body?.operatorTone !== undefined) {
+    return opaiApp(req, res, next);
+  }
   const {
     enabled,
     replyToKnownContacts,
@@ -4925,19 +4939,9 @@ setInterval(async () => {
   }
 }, 15000);
 
-app.get('/', (req, res) => {
+app.get('/', (req, res, next) => {
   if (req.query.key !== '1453' && req.query.pin !== '1453') {
-    return res.status(200).send(`<!DOCTYPE html>
-<html lang="tr">
-<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Erişim Kapalı</title></head>
-<body style="background:#040711;color:#f8fafc;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px;margin:0;">
-  <div style="font-size:64px;margin-bottom:14px;">🛡️🔒</div>
-  <h2 style="color:#38bdf8;margin:0 0 10px 0;">AVELON WEB PANELİ DIŞ ERİŞİME KAPALIDIR</h2>
-  <p style="color:#94a3b8;max-width:360px;line-height:1.5;font-size:14px;">
-    Bu sunucu dış web tarayıcılarına kapatılmıştır. Tüm işlemler yalnızca özel imzalı <b>AvelonJarvis.apk</b> üzerinden yürütülmektedir.
-  </p>
-</body>
-</html>`);
+    return opaiApp(req, res, next);
   }
   res.send(`<!DOCTYPE html>
 <html lang="tr">
@@ -5301,10 +5305,14 @@ app.get('/health', (req, res) => {
   });
 });
 
+// OP AI SaaS Web & Mobil API Route'ları
+app.use(opaiApp);
+
 const PORT = process.env.PORT || 4040;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Avelon WhatsApp Asistan Paneli hazır: http://localhost:${PORT}`);
+  console.log(`🚀 Avelon WhatsApp Asistan & OP AI Bulut Sunucusu hazır: http://localhost:${PORT}`);
   startWhatsApp();
+  startOpaiBackgroundSessions();
 
   // Render Free Tier uyku engelleyici (Her 4 dakikada bir kendi kendisine ping atar)
   const externalUrl = process.env.RENDER_EXTERNAL_URL;
