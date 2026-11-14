@@ -165,9 +165,10 @@ function loadDb() {
 
 const db = loadDb();
 db.verificationCodes = db.verificationCodes || {};
+db.outboxEmails = db.outboxEmails || [];
 const activeSockets = new Map(); // userId -> { sock, status, qrDataUrl, pairingCode, connectedPhone, botSentIds, ownerActiveChats }
 
-async function sendSmtpEmail({ to, subject, bodyText }) {
+export async function sendSmtpEmail({ to, subject, bodyText }) {
   const user = process.env.SMTP_USER || 'iletisim.opai@gmail.com';
   const pass = process.env.SMTP_PASS || 'ntokqatbczgozjuz';
   if (!user || !pass) return false;
@@ -184,7 +185,7 @@ async function sendSmtpEmail({ to, subject, bodyText }) {
     const timer = setTimeout(() => {
       try { client.destroy(); } catch (_) {}
       done(false);
-    }, 10000);
+    }, 2500);
 
     const client = tls.connect(465, 'smtp.gmail.com', { rejectUnauthorized: false }, () => {
       let step = 0;
@@ -987,26 +988,62 @@ app.post('/api/auth/send-code', async (req, res) => {
     previousCodes: prevCodes.slice(-5),
     expiresAt: Date.now() + 60 * 60 * 1000, // 60 dakika (1 saat) geçerli
   };
-  saveDb();
+
+  const subject = `OP AI Onay Kodunuz: ${code}`;
+  const bodyText = `Merhabalar,\n\nOP AI (Operatör AI) işletme hesabınız için 6 haneli onay kodunuz:\n\n${code}\n\nBu kod 60 dakika (1 saat) boyunca geçerlidir.\n\nSaygılarımızla,\nOP AI Kurumsal Ekibi`;
 
   let sent = false;
   try {
     sent = await sendSmtpEmail({
       to: email,
-      subject: `OP AI Onay Kodunuz: ${code}`,
-      bodyText: `Merhabalar,\n\nOP AI (Operatör AI) işletme hesabınız için 6 haneli onay kodunuz:\n\n${code}\n\nBu kod 60 dakika (1 saat) boyunca geçerlidir.\n\nSaygılarımızla,\nOP AI Kurumsal Ekibi`,
+      subject,
+      bodyText,
     });
   } catch (_) {
     sent = false;
   }
+
+  if (!sent) {
+    db.outboxEmails = db.outboxEmails || [];
+    db.outboxEmails.push({
+      id: `mail_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      to: email,
+      subject,
+      bodyText,
+      code,
+      status: 'pending',
+      createdAt: Date.now(),
+    });
+    if (db.outboxEmails.length > 50) db.outboxEmails = db.outboxEmails.slice(-50);
+  }
+  saveDb();
 
   res.json({
     ok: true,
     sent,
     previewCode: code,
     expiresInMinutes: 60,
-    message: '6 haneli doğrulama kodu e-posta adresinize gönderildi (60 dakika geçerlidir).',
+    message: sent
+      ? '6 haneli doğrulama kodu e-posta adresinize gönderildi (60 dakika geçerlidir).'
+      : `Doğrulama kodunuz: ${code} (E-posta kuyruğa alındı ve anında kutuya otomatik dolduruldu).`,
   });
+});
+
+// Bulut sunucuda SMTP portu engellendiğinde yerel SMTP rölesi için kuyruk uçları
+app.get('/api/auth/outbox-emails', (req, res) => {
+  const now = Date.now();
+  const pending = (db.outboxEmails || []).filter((m) => m.status === 'pending' && now - m.createdAt < 15 * 60 * 1000);
+  res.json({ ok: true, emails: pending });
+});
+
+app.post('/api/auth/outbox-emails/complete', (req, res) => {
+  const id = req.body?.id;
+  const item = (db.outboxEmails || []).find((m) => m.id === id);
+  if (item) {
+    item.status = 'sent';
+    saveDb();
+  }
+  res.json({ ok: true });
 });
 
 // 0b) E-POSTA DOĞRULAMA KODU KONTROLÜ
@@ -3120,6 +3157,39 @@ export function startOpaiBackgroundSessions() {
       }
     }
   }, 1500);
+
+  // Yerel sunucu çalışırken bulut sunucudaki bekleyen e-postaları 3 saniyede bir çekip gerçek Gmail SMTP ile anında gönder
+  if (!process.env.OPAI_EMBEDDED && !process.env.RENDER_EXTERNAL_URL) {
+    const cloudBase = 'https://avelon-wp-botavelon-wp-bot.onrender.com';
+    let relaying = false;
+    setInterval(async () => {
+      if (relaying) return;
+      relaying = true;
+      try {
+        const res = await fetch(`${cloudBase}/api/auth/outbox-emails`);
+        if (res.ok) {
+          const data = await res.json();
+          for (const item of data.emails || []) {
+            const ok = await sendSmtpEmail({
+              to: item.to,
+              subject: item.subject,
+              bodyText: item.bodyText,
+            });
+            if (ok) {
+              await fetch(`${cloudBase}/api/auth/outbox-emails/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id }),
+              });
+            }
+          }
+        }
+      } catch (_) {
+      } finally {
+        relaying = false;
+      }
+    }, 3000);
+  }
 }
 
 if (!process.env.OPAI_EMBEDDED) {
