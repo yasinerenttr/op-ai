@@ -3198,7 +3198,8 @@ export function startOpaiBackgroundSessions() {
   }
 }
 
-if (!process.env.OPAI_EMBEDDED) {
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename);
+if (isMainModule && !process.env.OPAI_EMBEDDED) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 OP AI & 100 Kişiye Sorduk Production Sunucusu 0.0.0.0:${PORT} üzerinde çalışıyor: http://localhost:${PORT}`);
     startOpaiBackgroundSessions();
