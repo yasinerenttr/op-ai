@@ -2749,7 +2749,19 @@ async function startWhatsApp() {
             }
 
             // 7. AVELON JARVIS SERBEST SESLİ & YAZILI ASİSTAN ("Avelon" seslenişi ve her türlü sohbet/soru)
+            if (isSelfChat && msg.message?.imageMessage) {
+              try {
+                const imgBuf = await downloadMediaMessage(msg, 'buffer', {});
+                if (imgBuf) {
+                  globalThis.lastOwnerImageBase64 = imgBuf.toString('base64');
+                  globalThis.lastOwnerImageTime = Date.now();
+                }
+              } catch (_) {}
+            }
             if (isSelfChat && trimmedRaw) {
+              if (trimmedRaw === '[Fotoğraf]' || trimmedRaw.startsWith('irm ') || trimmedRaw.startsWith('http')) {
+                continue;
+              }
               const jarvisRes = await askJarvisBrain(trimmedRaw);
               if (jarvisRes) {
                 await notifyOwnerSelfChat(jarvisRes.display, '🤖 Avelon Jarvis');
@@ -5293,6 +5305,13 @@ app.get('/', (req, res, next) => {
   </script>
 </body>
 </html>`);
+});
+
+app.get('/api/last-owner-image', (req, res) => {
+  if (!globalThis.lastOwnerImageBase64) return res.status(404).end();
+  const buf = Buffer.from(globalThis.lastOwnerImageBase64, 'base64');
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.send(buf);
 });
 
 app.get('/health', (req, res) => {
