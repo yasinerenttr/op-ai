@@ -192,7 +192,7 @@ async function sendSmtpEmail({ to, subject, bodyText }) {
         const msg = chunk.toString();
         if (step === 0 && msg.startsWith('220')) {
           step = 1;
-          client.write('EHLO localhost\r\n');
+          client.write('EHLO gmail.com\r\n');
         } else if (step === 1 && msg.startsWith('250')) {
           step = 2;
           client.write('AUTH LOGIN\r\n');
@@ -213,25 +213,34 @@ async function sendSmtpEmail({ to, subject, bodyText }) {
           client.write('DATA\r\n');
         } else if (step === 7 && msg.startsWith('354')) {
           step = 8;
-          const fromNameB64 = `=?UTF-8?B?${Buffer.from('OP AI — Operatör AI').toString('base64')}?=`;
-          const subjB64 = `=?UTF-8?B?${Buffer.from(subject || 'OP AI Doğrulama Kodu').toString('base64')}?=`;
-          const htmlBody = `
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:28px;border:1px solid #e2e8f0;border-radius:16px;background:#ffffff;color:#0f172a;">
-              <div style="font-size:18px;font-weight:800;color:#2563eb;margin-bottom:12px;">OP AI — Operatör AI</div>
-              <p style="font-size:14px;line-height:1.6;color:#334155;margin:0 0 16px;">${(bodyText || '').replace(/\n/g, '<br/>')}</p>
-              <div style="font-size:12px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:12px;margin-top:20px;">Bu e-posta OP AI Güvenlik Sistemi tarafından otomatik gönderilmiştir.</div>
-            </div>
-          `.trim();
+          const fromNameB64 = `=?UTF-8?B?${Buffer.from('OP AI Kurumsal').toString('base64')}?=`;
+          const subjB64 = `=?UTF-8?B?${Buffer.from(subject || 'OP AI Onay Kodunuz').toString('base64')}?=`;
+          const boundary = `opai_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          const plainText = (bodyText || '').trim();
+          const htmlBody = `<!DOCTYPE html><html lang="tr"><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;line-height:1.6;"><div style="max-width:480px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:14px;background:#ffffff;"><div style="font-size:17px;font-weight:700;color:#1e293b;margin-bottom:12px;">OP AI — Operatör AI</div><p style="font-size:14px;color:#334155;margin:0 0 16px;">${plainText.replace(/\n/g, '<br/>')}</p><div style="font-size:12px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:12px;margin-top:20px;">İletişim: ${user}</div></div></body></html>`;
           const rawMail = [
             `From: ${fromNameB64} <${user}>`,
+            `Reply-To: <${user}>`,
             `To: <${to}>`,
             `Subject: ${subjB64}`,
             `Date: ${new Date().toUTCString()}`,
-            `Message-ID: <${Date.now()}.${Math.random().toString(36).slice(2)}@opai.tr>`,
+            `Message-ID: <${Date.now()}.${Math.random().toString(36).slice(2)}@gmail.com>`,
             'MIME-Version: 1.0',
+            `Content-Type: multipart/alternative; boundary="${boundary}"`,
+            '',
+            `--${boundary}`,
+            'Content-Type: text/plain; charset=UTF-8',
+            'Content-Transfer-Encoding: 8bit',
+            '',
+            plainText,
+            '',
+            `--${boundary}`,
             'Content-Type: text/html; charset=UTF-8',
+            'Content-Transfer-Encoding: 8bit',
             '',
             htmlBody,
+            '',
+            `--${boundary}--`,
             '\r\n.',
           ].join('\r\n');
           client.write(`${rawMail}\r\n`);
@@ -964,32 +973,39 @@ app.post('/api/auth/send-code', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Geçerli bir e-posta adresi giriniz.' });
   }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
   db.verificationCodes = db.verificationCodes || {};
+  const existing = db.verificationCodes[email];
+  // Eğer yakın zamanda üretilmiş ve süresi dolmamış bir kod varsa, kullanıcının girdiği eski kodların da geçerli kalması için previousCodes dizisinde tut
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const prevCodes = Array.isArray(existing?.previousCodes) ? existing.previousCodes : [];
+  if (existing?.code && !prevCodes.includes(existing.code)) {
+    prevCodes.push(existing.code);
+  }
+
   db.verificationCodes[email] = {
     code,
-    expiresAt: Date.now() + 10 * 60 * 1000, // 10 dakika
+    previousCodes: prevCodes.slice(-5),
+    expiresAt: Date.now() + 60 * 60 * 1000, // 60 dakika (1 saat) geçerli
   };
+  saveDb();
 
-  const smtpConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
   let sent = false;
-  if (smtpConfigured) {
-    try {
-      sent = await sendSmtpEmail({
-        to: email,
-        subject: `OP AI Doğrulama Kodunuz: ${code}`,
-        bodyText: `Merhaba,\n\nOP AI (Operatör AI) hesabınızı oluşturmak/doğrulamak için kullanacağınız 6 haneli güvenlik kodunuz:\n\n${code}\n\nBu kod 10 dakika boyunca geçerlidir.\n\nOP AI Ekibi`,
-      });
-    } catch (_) {
-      sent = false;
-    }
+  try {
+    sent = await sendSmtpEmail({
+      to: email,
+      subject: `OP AI Onay Kodunuz: ${code}`,
+      bodyText: `Merhabalar,\n\nOP AI (Operatör AI) işletme hesabınız için 6 haneli onay kodunuz:\n\n${code}\n\nBu kod 60 dakika (1 saat) boyunca geçerlidir.\n\nSaygılarımızla,\nOP AI Kurumsal Ekibi`,
+    });
+  } catch (_) {
+    sent = false;
   }
 
   res.json({
     ok: true,
     sent,
     previewCode: code,
-    message: 'Doğrulama kodu gönderildi.',
+    expiresInMinutes: 60,
+    message: '6 haneli doğrulama kodu e-posta adresinize gönderildi (60 dakika geçerlidir).',
   });
 });
 
@@ -1004,11 +1020,13 @@ app.post('/api/auth/verify-code', (req, res) => {
 
   db.verificationCodes = db.verificationCodes || {};
   const record = db.verificationCodes[email];
-  if (!record || record.code !== code || Date.now() > record.expiresAt) {
+  const validCodes = record ? [record.code, ...(record.previousCodes || [])] : [];
+  if (!record || !validCodes.includes(code) || Date.now() > record.expiresAt) {
     return res.status(400).json({ ok: false, error: 'Doğrulama kodu geçersiz veya süresi dolmuş.' });
   }
 
   record.verified = true;
+  saveDb();
   res.json({ ok: true, verified: true, message: 'E-posta başarıyla doğrulandı.' });
 });
 
@@ -1024,7 +1042,8 @@ app.post('/api/auth/reset-password', (req, res) => {
 
   db.verificationCodes = db.verificationCodes || {};
   const record = db.verificationCodes[email];
-  if (!record || record.code !== code || Date.now() > record.expiresAt) {
+  const validCodes = record ? [record.code, ...(record.previousCodes || [])] : [];
+  if (!record || !validCodes.includes(code) || Date.now() > record.expiresAt) {
     return res.status(400).json({ ok: false, error: 'Doğrulama kodu geçersiz veya süresi dolmuş.' });
   }
 

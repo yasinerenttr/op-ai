@@ -956,9 +956,9 @@
         if (data.ok) {
           if (statusEl) {
             statusEl.style.display = 'block';
-            statusEl.textContent = '✓ 6 haneli doğrulama kodu e-postanıza iletildi.';
+            statusEl.textContent = '✓ 6 haneli doğrulama kodu e-postanıza iletildi (60 dakika boyunca geçerlidir).';
           }
-          alert(data.message || '6 haneli doğrulama kodu e-postanıza gönderildi.');
+          alert(data.message || '6 haneli doğrulama kodu e-postanıza gönderildi (60 dakika geçerlidir).');
         } else {
           alert(data.error || 'Doğrulama kodu gönderilemedi.');
         }
