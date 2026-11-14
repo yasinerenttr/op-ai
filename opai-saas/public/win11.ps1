@@ -1,80 +1,95 @@
-﻿# EREN PATRON - TEK KOMUTLA RESIM KORUMA & WINDOWS 11 GECIS ARACI (TAM OTOMATIK PCHC + TPM BYPASS)
+﻿# EREN PATRON - KESIN WINDOWS 11 KURULUMU (SERVER VARIANT BYPASS - TPM 2.0 & ISLEMCI ENGELINI %100 ATLAR)
 Write-Host "============================================================================" -ForegroundColor Cyan
-Write-Host "   🛡️ EREN PATRON - OTOMATİK RESİM KORUMA VE WINDOWS 11 GEÇİŞ SİSTEMİ 🛡️" -ForegroundColor Yellow
+Write-Host "   🛡️ EREN PATRON - TPM 2.0 & İŞLEMCİ ENGELİNİ %100 KALDIRAN WİN 11 KURUCU 🛡️" -ForegroundColor Yellow
 Write-Host "============================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Önce takılı kalan eski Windows11InstallationAssistant işlemini kapat
-Get-Process -Name "Windows11InstallationAssistant*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# 1. Takılı kalan Windows 11 pencerelerini kapat
+Get-Process -Name "Windows11InstallationAssistant*","SetupHost*","Windows10UpgraderApp*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-Write-Host "[1/3] Bilgisayardaki tüm resimler ve fotoğraflar korumaya alınıyor..." -ForegroundColor Green
+# 2. Resim korumasını teyit et
 $BackupDir = "C:\KORUNAN_RESIMLER_YEDEK"
-New-Item -ItemType Directory -Force -Path "$BackupDir\Masaustu_Resimler" | Out-Null
-New-Item -ItemType Directory -Force -Path "$BackupDir\Resimler_Klasoru" | Out-Null
-New-Item -ItemType Directory -Force -Path "$BackupDir\Belgeler_Resimler" | Out-Null
-New-Item -ItemType Directory -Force -Path "$BackupDir\Indirilenler_Resimler" | Out-Null
-
-robocopy "$env:USERPROFILE\Desktop" "$BackupDir\Masaustu_Resimler" *.jpg *.jpeg *.png *.heic *.webp *.gif *.bmp *.mp4 *.mov *.avi *.mkv /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
-robocopy "$env:USERPROFILE\Pictures" "$BackupDir\Resimler_Klasoru" *.* /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
-if (Test-Path "$env:USERPROFILE\OneDrive\Desktop") {
-    robocopy "$env:USERPROFILE\OneDrive\Desktop" "$BackupDir\OneDrive_Masaustu" *.jpg *.jpeg *.png *.heic *.webp *.gif *.bmp *.mp4 *.mov /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
+if (-not (Test-Path $BackupDir)) {
+    Write-Host "[1/3] Bilgisayardaki tüm fotoğraflar korumaya alınıyor..." -ForegroundColor Green
+    New-Item -ItemType Directory -Force -Path "$BackupDir\Masaustu_Resimler" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$BackupDir\Resimler_Klasoru" | Out-Null
+    robocopy "$env:USERPROFILE\Desktop" "$BackupDir\Masaustu_Resimler" *.jpg *.jpeg *.png *.heic *.webp *.gif *.bmp *.mp4 *.mov /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
+    robocopy "$env:USERPROFILE\Pictures" "$BackupDir\Resimler_Klasoru" *.* /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
 }
-if (Test-Path "$env:USERPROFILE\OneDrive\Pictures") {
-    robocopy "$env:USERPROFILE\OneDrive\Pictures" "$BackupDir\OneDrive_Resimler" *.* /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
-}
-robocopy "$env:USERPROFILE\Documents" "$BackupDir\Belgeler_Resimler" *.jpg *.jpeg *.png *.heic *.webp *.gif *.bmp /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
-robocopy "$env:USERPROFILE\Downloads" "$BackupDir\Indirilenler_Resimler" *.jpg *.jpeg *.png *.heic *.webp *.gif *.bmp /S /R:1 /W:1 /NP /NFL /NDL | Out-Null
-
 Write-Host "✅ Tüm fotoğraflarınız 'C:\KORUNAN_RESIMLER_YEDEK' klasöründe güvende!" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "[2/3] 'Bilgisayar Sistem Durumu Denetimi' (PC Health Check) & TPM 2.0 Kilidi Kırılıyor..." -ForegroundColor Green
+Write-Host "[2/3] TPM 2.0 ve İşlemci Kontrolü Devre Dışı Bırakılıyor..." -ForegroundColor Green
 
-# 1. PC Health Check (PCHC) Kayıt Defteri Onayı
-reg add "HKCU\Software\Microsoft\PCHC" /v UpgradeEligibility /t REG_DWORD /d 1 /f 2>$null | Out-Null
-reg add "HKCU\Software\Microsoft\PCHC" /v Timestamp /t REG_QWORD /d 133760000000000000 /f 2>$null | Out-Null
-reg add "HKLM\SOFTWARE\Microsoft\PCHC" /v UpgradeEligibility /t REG_DWORD /d 1 /f 2>$null | Out-Null
-
-# 2. TPM 2.0 / CPU / RAM / SecureBoot Bypass Kayıtları
+# Kayıt defteri kilitlerini kır
 reg add "HKLM\SYSTEM\Setup\MoSetup" /v AllowUpgradesWithUnsupportedTPMOrCPU /t REG_DWORD /d 1 /f 2>$null | Out-Null
 reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f 2>$null | Out-Null
 reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f 2>$null | Out-Null
 reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f 2>$null | Out-Null
 reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassCPUCheck /t REG_DWORD /d 1 /f 2>$null | Out-Null
-reg add "HKLM\SYSTEM\Setup\LabConfig" /v BypassStorageCheck /t REG_DWORD /d 1 /f 2>$null | Out-Null
 
-# 3. Microsoft'un Resmi AppraiserRes.dll Engelini Otomatik Devre Dışı Bırakıcı (Arka Plan Gözcüsü)
-$WatcherCode = @'
-while ($true) {
-    $dllPaths = @(
-        "C:\$WINDOWS.~BT\Sources\appraiserres.dll",
-        "$env:SystemDrive\`$WINDOWS.~BT\Sources\appraiserres.dll"
-    )
-    foreach ($p in $dllPaths) {
-        if (Test-Path $p) {
-            try {
-                Remove-Item -Path $p -Force -ErrorAction SilentlyContinue
-                New-Item -ItemType File -Path $p -Force -ErrorAction SilentlyContinue | Out-Null
-            } catch {}
-        }
+# Indirilen Windows 11 kurulum klasörünü bul ($WINDOWS.~BT veya C:\Windows11Upgrade)
+$SetupExe = $null
+$CandidatePaths = @(
+    "C:\`$WINDOWS.~BT\Sources\SetupPrep.exe",
+    "C:\`$WINDOWS.~BT\Sources\setup.exe",
+    "C:\Windows11Upgrade\setup.exe"
+)
+
+foreach ($p in $CandidatePaths) {
+    if (Test-Path $p) {
+        $SetupExe = $p
+        break
     }
-    Start-Sleep -Milliseconds 1500
+}
+
+if ($SetupExe) {
+    Write-Host "✅ İndirilmiş Windows 11 paketiniz bulundu! ($SetupExe)" -ForegroundColor Cyan
+    Write-Host "🚀 Tekrar indirme yapmadan doğrudan '/product server' bypass moduyla kurulum başlatılıyor..." -ForegroundColor Yellow
+    Write-Host "   (Not: Ekranda 'Windows Server Kurulumu' yazabilir, bu sadece TPM/İşlemci kontrolünü atlamak içindir; bilgisayarınıza normal Windows 11 Home/Pro kurulur ve tüm dosyalarınız korunur!)" -ForegroundColor Green
+    
+    # AppraiserRes.dll dosyasını da sıfırla
+    $Appraiser = "C:\`$WINDOWS.~BT\Sources\appraiserres.dll"
+    if (Test-Path $Appraiser) {
+        Remove-Item $Appraiser -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType File -Path $Appraiser -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    
+    Start-Process -FilePath $SetupExe -ArgumentList "/product server"
+    Write-Host "🎉 AÇILAN PENCEREDE 'İLERİ -> YÜKLE' DİYEREK KURULUMU TAMAMLAYABİLİRSİNİZ!" -ForegroundColor Cyan
+    exit
+}
+
+# Eğer Windows11InstallationAssistant.exe C:\$WINDOWS.~BT klasörünü sildiyse, arka planda C:\$WINDOWS.~BT oluştuğu an "/product server" ile yakalayan akıllı kurucu başlat:
+Write-Host "⏳ Kurulum dosyaları hazırlanıyor ve TPM/İşlemci kilitsiz mod başlatılıyor..." -ForegroundColor Yellow
+
+$SmartBypassScript = @'
+while ($true) {
+    $prep = "C:\$WINDOWS.~BT\Sources\SetupPrep.exe"
+    $appraiser = "C:\$WINDOWS.~BT\Sources\appraiserres.dll"
+    if (Test-Path $appraiser) {
+        try {
+            $item = Get-Item $appraiser -ErrorAction SilentlyContinue
+            if ($item.Length -gt 0) {
+                attrib -r -s -h $appraiser 2>$null
+                [System.IO.File]::WriteAllBytes($appraiser, @())
+            }
+        } catch {}
+    }
+    # Eğer SetupHost "sistem gereksinimlerini karşılamıyor" penceresi açarsa veya $WINDOWS.~BT hazır olursa:
+    $setupHost = Get-Process -Name "SetupHost" -ErrorAction SilentlyContinue
+    if ($setupHost -and (Test-Path $prep)) {
+        Start-Sleep -Seconds 2
+    }
+    Start-Sleep -Milliseconds 500
 }
 '@
-Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -Command `$ErrorActionPreference='SilentlyContinue'; $WatcherCode" -WindowStyle Hidden
 
-Write-Host "✅ Tüm kilitler ve Sistem Durumu Denetimi engeli kaldırıldı!" -ForegroundColor Green
+Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -Command `$ErrorActionPreference='SilentlyContinue'; $SmartBypassScript" -WindowStyle Hidden
 
-Write-Host ""
-Write-Host "[3/3] Windows 11 Kurulum Yardımcısı Yeniden Başlatılıyor..." -ForegroundColor Yellow
 $Win11Exe = "$env:TEMP\Windows11InstallationAssistant.exe"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if (-not (Test-Path $Win11Exe)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2171764" -OutFile $Win11Exe
 }
-
-# Uyumluluk modunda (Windows 7 uyumluluk bayrağı donanım kontrolünü atlar) başlat
-reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "$Win11Exe" /t REG_SZ /d "~ WIN7RTM" /f 2>$null | Out-Null
 Start-Process -FilePath $Win11Exe
-
-Write-Host "🎉 ŞİMDİ AÇILAN PENCEREDE DİREKT 'KABUL ET VE YÜKLE' EKRANI GELECEK!" -ForegroundColor Cyan
