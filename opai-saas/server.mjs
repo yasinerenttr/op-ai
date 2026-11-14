@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import express from 'express';
 import ffmpegStatic from 'ffmpeg-static';
 import fs from 'fs';
+import { IgApiClient } from 'instagram-private-api';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import os from 'os';
 import path from 'path';
@@ -939,8 +940,11 @@ function buildSafeOpAiUser(user, isAuthed) {
   if (!user) return null;
   const { passwordHash: _pw, ...rest } = user;
   if (rest.channels?.instagram) {
-    const { pageToken: _pt, accessToken: _at, ...igSafe } = rest.channels.instagram;
-    rest.channels = { ...rest.channels, instagram: igSafe };
+    const { pageToken: _pt, accessToken: _at, serializedState: _ss, ...igSafe } = rest.channels.instagram;
+    rest.channels = {
+      ...rest.channels,
+      instagram: { ...igSafe, liveDmActive: Boolean(user.channels.instagram.serializedState) },
+    };
   }
   return {
     ...rest,
@@ -1580,9 +1584,214 @@ app.get('/api/auth/instagram/callback', async (req, res) => {
 app.post('/api/instagram/disconnect', (req, res) => {
   const { user, isAuthed } = getAuthContext(req);
   if (!user || !isAuthed) return res.status(401).json({ ok: false });
+  stopInstagramDirectWorker(user.id);
   user.channels.instagram = { connected: false, username: '', accessToken: '', pageId: '' };
   saveDb();
   res.json({ ok: true, user: buildSafeOpAiUser(user, true) });
+});
+
+// ===================== 📸 DOĞRUDAN SUNUCU TABANLI INSTAGRAM DM BOTU (7/24 EKLENTİSİZ) =====================
+const activeIgClients = new Map(); // userId -> { ig, pk, timer, seenItemIds, initialized }
+
+function stopInstagramDirectWorker(userId) {
+  const entry = activeIgClients.get(userId);
+  if (entry?.timer) clearInterval(entry.timer);
+  activeIgClients.delete(userId);
+}
+
+async function startInstagramDirectWorker(user) {
+  if (!user || !user.id) return false;
+  const igConf = user.channels?.instagram || {};
+  if (!igConf.serializedState || !igConf.username) return false;
+
+  stopInstagramDirectWorker(user.id);
+
+  try {
+    const ig = new IgApiClient();
+    ig.state.generateDevice(igConf.username);
+    await ig.state.deserialize(igConf.serializedState);
+
+    const seenItemIds = new Set();
+    const workerState = {
+      ig,
+      pk: String(igConf.pk || ''),
+      seenItemIds,
+      initialized: false,
+      polling: false,
+      timer: null,
+    };
+
+    const pollInbox = async () => {
+      if (workerState.polling) return;
+      const currentUserObj = db.users[user.id];
+      if (!currentUserObj || !currentUserObj.channels?.instagram?.connected) {
+        stopInstagramDirectWorker(user.id);
+        return;
+      }
+      workerState.polling = true;
+      try {
+        const inboxFeed = ig.feed.directInbox();
+        const threads = await inboxFeed.items();
+
+        for (const thread of (threads || []).slice(0, 10)) {
+          const lastItem = thread.last_permanent_item || (thread.items && thread.items[0]);
+          if (!lastItem || !lastItem.item_id) continue;
+
+          const itemId = String(lastItem.item_id);
+          if (!workerState.initialized) {
+            seenItemIds.add(itemId);
+            continue;
+          }
+          if (seenItemIds.has(itemId)) continue;
+          seenItemIds.add(itemId);
+
+          const senderPk = String(lastItem.user_id || '');
+          // Kendi gönderdiğimiz mesajlara cevap verme
+          if (workerState.pk && senderPk === workerState.pk) continue;
+
+          let text = '';
+          if (lastItem.item_type === 'text' && lastItem.text) {
+            text = String(lastItem.text).trim();
+          } else if (lastItem.text) {
+            text = String(lastItem.text).trim();
+          }
+          if (!text) continue;
+
+          // Kendi OP AI otomatik mesajımızsa atla
+          if (
+            text.includes('GÜNCEL DOLU & BOŞ SAATLERİMİZ') ||
+            text.includes('Otomatik Randevu Sistemine') ||
+            text.includes('hattına hoş geldiniz')
+          ) {
+            continue;
+          }
+
+          const senderUser = (thread.users || []).find((u) => String(u.pk) === senderPk) || (thread.users || [])[0];
+          const senderHandle = senderUser?.username ? `@${senderUser.username}` : (thread.thread_title || `IG_${senderPk}`);
+
+          console.log(`📸 [IG DM GELDİ] İşletme: @${igConf.username} | Kimden: ${senderHandle} | Mesaj: "${text}"`);
+          const outcome = await handleIncomingChannelMessage(currentUserObj, {
+            platform: 'instagram',
+            senderId: senderHandle,
+            senderName: senderHandle,
+            text,
+          });
+
+          if (outcome?.replyText) {
+            const cleanReply = toPlainText(outcome.replyText);
+            await ig.entity.directThread(thread.thread_id).broadcastText(cleanReply);
+            console.log(`✅ [IG DM YANITLANDI] -> ${senderHandle}`);
+          }
+        }
+        workerState.initialized = true;
+      } catch (err) {
+        // Gürültüsüz geç
+      } finally {
+        workerState.polling = false;
+      }
+    };
+
+    await pollInbox();
+    workerState.timer = setInterval(pollInbox, 5500);
+    activeIgClients.set(user.id, workerState);
+    console.log(`📸 [IG 7/24 BOT AKTİF] @${igConf.username} (${user.id}) doğrudan bulut sunucusuna bağlandı!`);
+    return true;
+  } catch (err) {
+    console.error('IG Direct Worker başlatma hatası:', err.message);
+    return false;
+  }
+}
+
+app.post('/api/instagram/login', async (req, res) => {
+  const { user, isAuthed } = getAuthContext(req);
+  if (!isAuthed || !user) {
+    return res.status(401).json({ ok: false, error: 'Oturum bulunamadı veya yetkisiz istek.' });
+  }
+
+  const cleanUsername = String(req.body?.username || '').trim().replace(/^@+/, '');
+  const password = String(req.body?.password || '').trim();
+  const sessionIdCookie = String(req.body?.sessionId || '').trim();
+
+  if (!cleanUsername) {
+    return res.status(400).json({ ok: false, error: 'Instagram kullanıcı adı gereklidir.' });
+  }
+
+  // Eğer şifre veya sessionId girilmediyse sadece kullanıcı adını kaydet
+  if (!password && !sessionIdCookie) {
+    user.channels.instagram = {
+      ...(user.channels.instagram || {}),
+      username: cleanUsername,
+      connected: true,
+    };
+    saveDb();
+    return res.json({
+      ok: true,
+      liveConnected: Boolean(user.channels.instagram.serializedState),
+      user: buildSafeOpAiUser(user, true),
+      message: `@${cleanUsername} kaydedildi. 7/24 gerçek DM otomatik yanıtlaması için Instagram şifrenizle giriş yapabilirsiniz.`,
+    });
+  }
+
+  try {
+    const ig = new IgApiClient();
+    ig.state.generateDevice(cleanUsername);
+
+    let authUser = null;
+    if (sessionIdCookie) {
+      // Instagram sessionid çerezi ile doğrudan 2FA takılmadan giriş
+      const decodedSession = decodeURIComponent(sessionIdCookie);
+      await ig.state.deserializeCookieJar(
+        JSON.stringify({
+          version: 'tough-cookie@2.5.0',
+          storeType: 'MemoryCookieStore',
+          rejectPublicSuffixes: true,
+          cookies: [
+            {
+              key: 'sessionid',
+              value: decodedSession,
+              domain: 'instagram.com',
+              path: '/',
+              hostOnly: false,
+              creation: new Date().toISOString(),
+              lastAccessed: new Date().toISOString(),
+            },
+          ],
+        })
+      );
+      authUser = await ig.account.currentUser();
+    } else {
+      authUser = await ig.account.login(cleanUsername, password);
+    }
+
+    const serialized = await ig.state.serialize();
+    delete serialized.constants;
+
+    user.channels.instagram = {
+      ...(user.channels.instagram || {}),
+      connected: true,
+      liveDmActive: true,
+      username: authUser?.username || cleanUsername,
+      pk: String(authUser?.pk || ''),
+      serializedState: serialized,
+      connectedAt: new Date().toISOString(),
+    };
+    saveDb();
+
+    await startInstagramDirectWorker(user);
+
+    return res.json({
+      ok: true,
+      liveConnected: true,
+      user: buildSafeOpAiUser(user, true),
+      message: `✅ @${user.channels.instagram.username} Instagram hesabınız 7/24 bulut sunucusuna canlı bağlandı! Artık DM kutunuza gelen mesajlara yapay zeka otomatik cevap verecek.`,
+    });
+  } catch (err) {
+    console.error('IG Direct Login Hatası:', err.message);
+    return res.status(400).json({
+      ok: false,
+      error: `Instagram girişi doğrulanamadı (${err.message}). Şifrenizi kontrol edin veya Instagram uygulamasından "Bu bendim" onayını verip tekrar deneyin.`,
+    });
+  }
 });
 
 // Meta'nın tek webhook adresi (tüm işletmeler için) — Meta Developer paneline bu yazılır
@@ -3154,6 +3363,12 @@ export function startOpaiBackgroundSessions() {
       } catch (e) {
         console.error('Oturum kontrol hatası:', userId, e.message);
       }
+      try {
+        const u = db.users[userId];
+        if (u?.channels?.instagram?.serializedState) {
+          startInstagramDirectWorker(u).catch(() => {});
+        }
+      } catch (_) {}
     }
   }, 1500);
 

@@ -743,13 +743,17 @@
           <div class="card">
             <h3 style="font-size:1.05rem; margin-bottom:10px;">2. Instagram DM Bağlantısı (Instagram İşletme)</h3>
             <div style="max-width:560px;">
-              <p style="font-size:.9rem; color:#64748b; margin-bottom:12px;">Instagram işletme kullanıcı adınızı girerek gelen Instagram DM mesajlarını ortak randevu takvimine ve yapay zeka operatörünüze bağlayın.</p>
+              <p style="font-size:.9rem; color:#64748b; margin-bottom:12px;">Instagram işletme kullanıcı adınızı ve şifrenizi girerek eklenti veya ek program kurmadan gelen tüm Instagram DM mesajlarını 7/24 bulut üzerinden yapay zeka operatörünüze bağlayın.</p>
               <div id="igStatus" style="font-weight:700; margin-bottom:12px;">⚪ Instagram henüz bağlı değil</div>
-              <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
-                <input type="text" id="igUsernameInput" class="input" style="flex:1; max-width:260px; margin-bottom:0;" name="ig_handle_nofill" autocomplete="off" placeholder="Instagram Kullanıcı Adı (@isletme)" />
-                <button id="igConnectBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#833ab4,#e1306c,#f77737); border:none;" onclick="saveInstagramAccount()">📸 Instagram Hesabını Bağla</button>
+              <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                <input type="text" id="igUsernameInput" class="input" style="flex:1; min-width:180px; margin-bottom:0;" name="ig_handle_nofill" autocomplete="off" placeholder="Instagram Kullanıcı Adı (@isletme)" />
+                <input type="password" id="igPasswordInput" class="input" style="flex:1; min-width:180px; margin-bottom:0;" name="ig_pass_nofill" autocomplete="new-password" placeholder="Instagram Şifresi (7/24 Canlı DM İçin)" />
+              </div>
+              <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+                <button id="igConnectBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#833ab4,#e1306c,#f77737); border:none;" onclick="saveInstagramAccount()">📸 Instagram Hesabını 7/24 Bağla</button>
                 <button id="igDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectInstagram()">Bağlantıyı Kes</button>
               </div>
+              <div id="igLoginResultBox" style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px; font-size:0.84rem; font-weight:600;"></div>
               <div style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;">
                 <label class="label" style="margin-bottom:6px; font-size:0.82rem;">💬 Canlı Instagram DM Mesajı Gönder / Test Et:</label>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1393,8 +1397,11 @@
       const ig = currentUser.channels?.instagram;
       if (ig && (ig.connected || ig.username)) {
         const cleanIg = String(ig.username || '').replace(/^@+/, '');
-        if (igStatusEl) igStatusEl.innerHTML = `✅ Bağlı: <span style="color:#e1306c; font-weight:700;">@${escapeHtml(cleanIg)}</span> — Instagram DM'lerine yapay zeka cevap veriyor`;
-        if (igInput) igInput.value = cleanIg ? `@${cleanIg}` : '';
+        const modeBadge = ig.liveDmActive
+          ? '<span style="color:#16a34a; font-weight:700;">(7/24 Canlı DM Aktif)</span>'
+          : '<span style="color:#d97706; font-weight:600;">(Webhook Modu — Canlı DM için şifrenizle bağlayın)</span>';
+        if (igStatusEl) igStatusEl.innerHTML = `✅ Bağlı: <span style="color:#e1306c; font-weight:700;">@${escapeHtml(cleanIg)}</span> ${modeBadge}`;
+        if (igInput && !igInput.matches(':focus')) igInput.value = cleanIg ? `@${cleanIg}` : '';
         if (igDiscBtn) igDiscBtn.style.display = 'inline-block';
       } else {
         if (igStatusEl) igStatusEl.textContent = '⚪ Instagram henüz bağlı değil';
@@ -1878,26 +1885,58 @@
 
     async function saveInstagramAccount() {
       const rawVal = (document.getElementById('igUsernameInput')?.value || '').trim();
+      const password = (document.getElementById('igPasswordInput')?.value || '').trim();
       const username = rawVal.replace(/^@+/, '');
+      const resultBox = document.getElementById('igLoginResultBox');
+      const btn = document.getElementById('igConnectBtn');
       if (!username) {
         alert('Lütfen Instagram işletme kullanıcı adınızı girin (Örn: @isletmem).');
         return;
       }
+      if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = '#eff6ff';
+        resultBox.style.color = '#1e40af';
+        resultBox.style.border = '1px solid #bfdbfe';
+        resultBox.textContent = password
+          ? '⏳ Instagram hesabınıza giriş yapılıyor ve 7/24 DM operatörü başlatılıyor...'
+          : '⏳ Instagram kullanıcı adınız kaydediliyor...';
+      }
+      if (btn) btn.disabled = true;
       try {
-        const res = await apiFetch('/api/settings', {
+        const res = await apiFetch('/api/instagram/login', {
           method: 'POST',
-          body: JSON.stringify({ instagramUsername: username }),
+          body: JSON.stringify({ username, password }),
         });
         const data = await res.json();
+        if (btn) btn.disabled = false;
         if (data.ok && data.user) {
           currentUser = data.user;
+          const pwEl = document.getElementById('igPasswordInput');
+          if (pwEl) pwEl.value = '';
           renderAll();
-          alert(`✅ @${username} Instagram hesabınız başarıyla bağlandı!`);
+          if (resultBox) {
+            resultBox.style.background = '#f0fdf4';
+            resultBox.style.color = '#166534';
+            resultBox.style.border = '1px solid #86efac';
+            resultBox.textContent = data.message || `✅ @${username} Instagram hesabınız başarıyla bağlandı!`;
+          }
         } else {
-          alert(data.error || 'Instagram hesabı kaydedilemedi.');
+          if (resultBox) {
+            resultBox.style.background = '#fef2f2';
+            resultBox.style.color = '#991b1b';
+            resultBox.style.border = '1px solid #fca5a5';
+            resultBox.textContent = '❌ ' + (data.error || 'Instagram hesabı bağlanamadı.');
+          }
         }
       } catch (e) {
-        alert('Sunucu hatası: ' + e.message);
+        if (btn) btn.disabled = false;
+        if (resultBox) {
+          resultBox.style.background = '#fef2f2';
+          resultBox.style.color = '#991b1b';
+          resultBox.style.border = '1px solid #fca5a5';
+          resultBox.textContent = '❌ Sunucu hatası: ' + e.message;
+        }
       }
     }
 
@@ -1912,7 +1951,11 @@
         if (data.ok && data.user) {
           currentUser = data.user;
           const igInput = document.getElementById('igUsernameInput');
+          const pwInput = document.getElementById('igPasswordInput');
+          const resultBox = document.getElementById('igLoginResultBox');
           if (igInput) igInput.value = '';
+          if (pwInput) pwInput.value = '';
+          if (resultBox) resultBox.style.display = 'none';
           renderAll();
           alert('Instagram bağlantısı kesildi.');
         }
