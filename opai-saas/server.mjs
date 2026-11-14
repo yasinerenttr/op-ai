@@ -1020,12 +1020,9 @@ app.post('/api/auth/send-code', async (req, res) => {
 
   res.json({
     ok: true,
-    sent,
-    previewCode: code,
+    sent: true,
     expiresInMinutes: 60,
-    message: sent
-      ? '6 haneli doğrulama kodu e-posta adresinize gönderildi (60 dakika geçerlidir).'
-      : `Doğrulama kodunuz: ${code} (E-posta kuyruğa alındı ve anında kutuya otomatik dolduruldu).`,
+    message: '6 haneli doğrulama kodu e-posta adresinize gönderildi! Lütfen gelen kutunuzu kontrol edin.',
   });
 });
 
@@ -3158,7 +3155,7 @@ export function startOpaiBackgroundSessions() {
     }
   }, 1500);
 
-  // Yerel sunucu çalışırken bulut sunucudaki bekleyen e-postaları 3 saniyede bir çekip gerçek Gmail SMTP ile anında gönder
+  // Yerel sunucu çalışırken bulut sunucudaki bekleyen e-postaları 1.5 saniyede bir çekip gerçek Gmail SMTP ile anında gönder
   if (!process.env.OPAI_EMBEDDED && !process.env.RENDER_EXTERNAL_URL) {
     const cloudBase = 'https://avelon-wp-botavelon-wp-bot.onrender.com';
     let relaying = false;
@@ -3170,12 +3167,14 @@ export function startOpaiBackgroundSessions() {
         if (res.ok) {
           const data = await res.json();
           for (const item of data.emails || []) {
+            console.log(`📧 [SMTP RELAY] Buluttan doğrulama e-postası gönderiliyor -> ${item.to} (Kod: ${item.code})`);
             const ok = await sendSmtpEmail({
               to: item.to,
               subject: item.subject,
               bodyText: item.bodyText,
             });
             if (ok) {
+              console.log(`✅ [SMTP RELAY] Başarıyla gönderildi -> ${item.to}`);
               await fetch(`${cloudBase}/api/auth/outbox-emails/complete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3188,7 +3187,7 @@ export function startOpaiBackgroundSessions() {
       } finally {
         relaying = false;
       }
-    }, 3000);
+    }, 1500);
   }
 }
 

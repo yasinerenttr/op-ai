@@ -943,7 +943,6 @@
     async function sendEmailVerificationCode() {
       const email = (document.getElementById('authEmail')?.value || '').trim();
       const statusEl = document.getElementById('emailCodeStatus');
-      const verifyInput = document.getElementById('authVerifyCode');
       if (!email || !email.includes('@')) {
         alert('Lütfen geçerli bir kurumsal e-posta adresi girin.');
         return;
@@ -955,16 +954,11 @@
         });
         const data = await res.json();
         if (data.ok) {
-          if (data.previewCode && verifyInput && !verifyInput.value) {
-            verifyInput.value = data.previewCode;
-          }
           if (statusEl) {
             statusEl.style.display = 'block';
-            statusEl.textContent = data.sent
-              ? '✓ 6 haneli doğrulama kodu e-postanıza iletildi (60 dakika boyunca geçerlidir).'
-              : `✓ Doğrulama kodunuz (${data.previewCode}) hazırlandı ve e-postanıza iletiliyor (60 dk geçerli).`;
+            statusEl.textContent = '✓ 6 haneli doğrulama kodu e-postanıza iletildi (60 dakika boyunca geçerlidir).';
           }
-          alert(data.message || '6 haneli doğrulama kodu e-postanıza gönderildi (60 dakika geçerlidir).');
+          alert('6 haneli doğrulama kodu e-posta adresinize gönderildi! Lütfen gelen kutunuzu kontrol edip kodu girin.');
         } else {
           alert(data.error || 'Doğrulama kodu gönderilemedi.');
         }
@@ -987,11 +981,7 @@
         const data = await res.json();
         if (data.ok) {
           document.getElementById('forgotPasswordBox').style.display = 'block';
-          const resetCodeInput = document.getElementById('resetCodeInput');
-          if (data.previewCode && resetCodeInput && !resetCodeInput.value) {
-            resetCodeInput.value = data.previewCode;
-          }
-          alert(`${email} adresinize 6 haneli şifre doğrulama kodu gönderildi! Yeni şifrenizi girip güncelleyebilirsiniz.`);
+          alert(`${email} adresinize 6 haneli şifre doğrulama kodu gönderildi! Lütfen e-postanıza gelen kodu ve yeni şifrenizi girin.`);
         } else {
           alert(data.error || 'Doğrulama kodu gönderilemedi.');
         }
