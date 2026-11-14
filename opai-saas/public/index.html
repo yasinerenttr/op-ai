@@ -741,12 +741,17 @@
           </div>
 
           <div class="card">
-            <h3 style="font-size:1.05rem; margin-bottom:10px;">2. Instagram DM Bağlantısı (Resmi Meta Girişi)</h3>
-            <div style="max-width:520px;">
-              <p style="font-size:.9rem; color:#64748b; margin-bottom:12px;">Instagram hesabınız <b>Profesyonel/İşletme</b> hesabı olmalı ve bir Facebook Sayfasına bağlı olmalı. Butona basınca Meta'nın resmi izin penceresi açılır.</p>
-              <div id="igStatus" style="font-weight:700; margin-bottom:12px;">Durum kontrol ediliyor...</div>
-              <button id="igConnectBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#833ab4,#e1306c,#f77737); border:none;" onclick="connectInstagram()">📸 Instagram ile Bağlan</button>
-              <button id="igDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectInstagram()">Bağlantıyı Kes</button>
+            <h3 style="font-size:1.05rem; margin-bottom:10px;">2. Instagram DM Bağlantısı (Instagram İşletme)</h3>
+            <div style="max-width:560px;">
+              <p style="font-size:.9rem; color:#64748b; margin-bottom:12px;">Instagram işletme kullanıcı adınızı girerek gelen Instagram DM mesajlarını ortak randevu takvimine ve yapay zeka operatörünüze bağlayın.</p>
+              <div id="igStatus" style="font-weight:700; margin-bottom:12px;">⚪ Instagram henüz bağlı değil</div>
+              <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+                <input type="text" id="igUsernameInput" class="input" style="flex:1; max-width:260px; margin-bottom:0;" name="ig_handle_nofill" autocomplete="off" placeholder="Instagram Kullanıcı Adı (@isletme)" />
+                <button id="igConnectBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#833ab4,#e1306c,#f77737); border:none;" onclick="saveInstagramAccount()">📸 Instagram Hesabını Bağla</button>
+                <button id="igDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectInstagram()">Bağlantıyı Kes</button>
+              </div>
+              <p style="font-size:0.82rem; color:var(--muted); margin-bottom:6px;">Instagram DM Webhook URL Adresiniz:</p>
+              <code id="igWebhookUrl" style="display:block; padding:10px; background:#f1f5f9; border-radius:6px; word-break:break-all; font-size:0.82rem;">...</code>
             </div>
           </div>
 
@@ -756,7 +761,7 @@
               <p style="font-size:.9rem; color:#64748b; margin-bottom:12px;">TikTok hesabınızı bağlayarak gelen TikTok DM mesajlarını ortak randevu takvimine ve operatör yapay zekasına bağlayın.</p>
               <div id="tiktokStatus" style="font-weight:700; margin-bottom:12px;">⚪ TikTok henüz bağlı değil</div>
               <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
-                <input type="text" id="tiktokUsernameInput" class="input" style="flex:1; max-width:260px; margin-bottom:0;" placeholder="TikTok Kullanıcı Adı (@isletme)" />
+                <input type="text" id="tiktokUsernameInput" class="input" style="flex:1; max-width:260px; margin-bottom:0;" name="tiktok_handle_nofill" autocomplete="off" placeholder="TikTok Kullanıcı Adı (@isletme)" />
                 <button class="btn btn-primary" onclick="saveTikTokAccount()">Hesabı Kaydet</button>
                 <button id="tiktokDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectTikTok()">Bağlantıyı Kes</button>
               </div>
@@ -1341,19 +1346,47 @@
       const disconnectBtn = document.getElementById('tiktokDisconnectBtn');
       const webhookUrlEl = document.getElementById('tiktokWebhookUrl');
 
+      const baseOrigin = API_BASE || window.location.origin;
       const userId = currentUser.id || 'u_905525222988';
       if (webhookUrlEl) {
-        webhookUrlEl.textContent = `${window.location.origin}/api/webhooks/tiktok/${userId}`;
+        webhookUrlEl.textContent = `${baseOrigin}/api/webhooks/tiktok/${userId}`;
       }
 
       const tiktok = currentUser.channels?.tiktok;
       if (tiktok && (tiktok.connected || tiktok.username)) {
-        if (statusEl) statusEl.innerHTML = `✅ Bağlı: <span style="color:#000; font-weight:700;">@${escapeHtml(tiktok.username)}</span> — TikTok DM'lerine yapay zeka cevap veriyor`;
-        if (usernameInput) usernameInput.value = tiktok.username || '';
+        const cleanTt = String(tiktok.username || '').replace(/^@+/, '');
+        if (statusEl) statusEl.innerHTML = `✅ Bağlı: <span style="color:#0f172a; font-weight:700;">@${escapeHtml(cleanTt)}</span> — TikTok DM'lerine yapay zeka cevap veriyor`;
+        if (usernameInput) usernameInput.value = cleanTt ? `@${cleanTt}` : '';
         if (disconnectBtn) disconnectBtn.style.display = 'inline-block';
       } else {
         if (statusEl) statusEl.textContent = '⚪ TikTok henüz bağlı değil';
+        if (usernameInput && usernameInput.value.includes('@gmail.com')) usernameInput.value = '';
         if (disconnectBtn) disconnectBtn.style.display = 'none';
+      }
+
+      // Instagram Durumu ve Webhook URL
+      const igStatusEl = document.getElementById('igStatus');
+      const igInput = document.getElementById('igUsernameInput');
+      const igDiscBtn = document.getElementById('igDisconnectBtn');
+      const igWebEl = document.getElementById('igWebhookUrl');
+      if (igWebEl) {
+        igWebEl.textContent = `${baseOrigin}/api/webhooks/instagram/${userId}`;
+      }
+      const ig = currentUser.channels?.instagram;
+      if (ig && (ig.connected || ig.username)) {
+        const cleanIg = String(ig.username || '').replace(/^@+/, '');
+        if (igStatusEl) igStatusEl.innerHTML = `✅ Bağlı: <span style="color:#e1306c; font-weight:700;">@${escapeHtml(cleanIg)}</span> — Instagram DM'lerine yapay zeka cevap veriyor`;
+        if (igInput) igInput.value = cleanIg ? `@${cleanIg}` : '';
+        if (igDiscBtn) igDiscBtn.style.display = 'inline-block';
+      } else {
+        if (igStatusEl) igStatusEl.textContent = '⚪ Instagram henüz bağlı değil';
+        if (igInput && igInput.value.includes('@gmail.com')) igInput.value = '';
+        if (igDiscBtn) igDiscBtn.style.display = 'none';
+      }
+
+      const vw = document.getElementById('voiceWebhookUrl');
+      if (vw) {
+        vw.textContent = `${baseOrigin}/api/webhooks/voice-call/${userId}`;
       }
     }
 
@@ -1771,48 +1804,62 @@
       try {
         const r = await apiFetch('/api/meta/status');
         const d = await r.json();
-        const st = document.getElementById('igStatus');
         const vw = document.getElementById('voiceWebhookUrl');
         if (vw && d.voiceWebhookUrl) vw.textContent = d.voiceWebhookUrl;
-        if (!st) return;
-        if (d.instagram?.connected) {
-          st.innerHTML = `✅ Bağlı: <span style="color:#e1306c">@${d.instagram.username}</span> (${d.instagram.pageName || ''}) — DM'lere yapay zeka cevap veriyor`;
-          const connBtn = document.getElementById('igConnectBtn');
-          const discBtn = document.getElementById('igDisconnectBtn');
-          if (connBtn) connBtn.style.display = 'none';
-          if (discBtn) discBtn.style.display = 'inline-block';
-        } else if (!d.configured) {
-          st.innerHTML = '⚠️ Sunucuda Meta App ID tanımlı değil (yönetici kurulumu bekleniyor)';
-        } else {
-          st.innerHTML = '⚪ Instagram henüz bağlı değil';
-          const connBtn = document.getElementById('igConnectBtn');
-          const discBtn = document.getElementById('igDisconnectBtn');
-          if (connBtn) connBtn.style.display = 'inline-block';
-          if (discBtn) discBtn.style.display = 'none';
-        }
+        renderTikTokStatus();
       } catch (_) { }
     }
 
-    function connectInstagram() {
-      if (!authToken) { alert('Önce giriş yapın.'); return; }
-      window.location.href = `${API_BASE}/api/auth/instagram/start?token=` + encodeURIComponent(authToken);
+    async function saveInstagramAccount() {
+      const rawVal = (document.getElementById('igUsernameInput')?.value || '').trim();
+      const username = rawVal.replace(/^@+/, '');
+      if (!username) {
+        alert('Lütfen Instagram işletme kullanıcı adınızı girin (Örn: @isletmem).');
+        return;
+      }
+      try {
+        const res = await apiFetch('/api/settings', {
+          method: 'POST',
+          body: JSON.stringify({ instagramUsername: username }),
+        });
+        const data = await res.json();
+        if (data.ok && data.user) {
+          currentUser = data.user;
+          renderAll();
+          alert(`✅ @${username} Instagram hesabınız başarıyla bağlandı!`);
+        } else {
+          alert(data.error || 'Instagram hesabı kaydedilemedi.');
+        }
+      } catch (e) {
+        alert('Sunucu hatası: ' + e.message);
+      }
     }
 
     async function disconnectInstagram() {
       if (!confirm('Instagram bağlantısını kesmek istediğinize emin misiniz?')) return;
       try {
-        await apiFetch('/api/instagram/disconnect', { method: 'POST' });
-        await loadMetaStatus();
-        alert('Instagram bağlantısı kesildi.');
+        const res = await apiFetch('/api/settings', {
+          method: 'POST',
+          body: JSON.stringify({ instagramUsername: '' }),
+        });
+        const data = await res.json();
+        if (data.ok && data.user) {
+          currentUser = data.user;
+          const igInput = document.getElementById('igUsernameInput');
+          if (igInput) igInput.value = '';
+          renderAll();
+          alert('Instagram bağlantısı kesildi.');
+        }
       } catch (e) {
         alert('Hata: ' + e.message);
       }
     }
 
     async function saveTikTokAccount() {
-      const username = document.getElementById('tiktokUsernameInput').value.trim();
+      const rawVal = (document.getElementById('tiktokUsernameInput')?.value || '').trim();
+      const username = rawVal.replace(/^@+/, '');
       if (!username) {
-        alert('Lütfen TikTok kullanıcı adınızı girin.');
+        alert('Lütfen TikTok kullanıcı adınızı girin (Örn: @isletmem).');
         return;
       }
       try {
@@ -1824,7 +1871,7 @@
         if (data.ok && data.user) {
           currentUser = data.user;
           renderAll();
-          alert('TikTok hesabı başarıyla kaydedildi.');
+          alert(`✅ @${username} TikTok hesabınız başarıyla bağlandı!`);
         } else {
           alert(data.error || 'Kaydedilemedi.');
         }
@@ -1843,6 +1890,8 @@
         const data = await res.json();
         if (data.ok && data.user) {
           currentUser = data.user;
+          const ttInput = document.getElementById('tiktokUsernameInput');
+          if (ttInput) ttInput.value = '';
           renderAll();
           alert('TikTok bağlantısı kesildi.');
         } else {

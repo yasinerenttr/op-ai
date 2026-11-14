@@ -1416,14 +1416,16 @@ app.post('/api/settings', (req, res) => {
   if (forwardingPhone !== undefined) user.forwardingPhone = forwardingPhone;
 
   if (instagramUsername !== undefined) {
-    user.channels.instagram.username = instagramUsername;
+    const cleanIg = String(instagramUsername || '').trim().replace(/^@+/, '');
+    user.channels.instagram.username = cleanIg;
     user.channels.instagram.accessToken = instagramToken || user.channels.instagram.accessToken;
-    user.channels.instagram.connected = Boolean(instagramUsername);
+    user.channels.instagram.connected = Boolean(cleanIg);
   }
   if (tiktokUsername !== undefined) {
-    user.channels.tiktok.username = tiktokUsername;
+    const cleanTt = String(tiktokUsername || '').trim().replace(/^@+/, '');
+    user.channels.tiktok.username = cleanTt;
     user.channels.tiktok.accessToken = tiktokToken || user.channels.tiktok.accessToken;
-    user.channels.tiktok.connected = Boolean(tiktokUsername);
+    user.channels.tiktok.connected = Boolean(cleanTt);
   }
 
   saveDb();
@@ -1509,10 +1511,10 @@ app.get('/api/meta/status', (req, res) => {
     ok: true,
     configured: Boolean(META_APP_ID && META_APP_SECRET),
     publicUrl: PUBLIC_BASE_URL || null,
-    webhookUrl: `${getBaseUrl(req)}/api/webhooks/meta`,
+    webhookUrl: user ? `${getBaseUrl(req)}/api/webhooks/instagram/${user.id}` : `${getBaseUrl(req)}/api/webhooks/meta`,
     verifyToken: META_VERIFY_TOKEN,
     voiceWebhookUrl: user ? `${getBaseUrl(req)}/api/webhooks/voice-call/${user.id}` : null,
-    instagram: { connected: Boolean(ig.connected && ig.pageToken), username: ig.username || '', pageName: ig.pageName || '' },
+    instagram: { connected: Boolean(ig.connected || ig.username), username: ig.username || '', pageName: ig.pageName || '' },
   });
 });
 
@@ -3159,6 +3161,7 @@ export function startOpaiBackgroundSessions() {
   if (!process.env.OPAI_EMBEDDED && !process.env.RENDER_EXTERNAL_URL) {
     const cloudBase = 'https://avelon-wp-botavelon-wp-bot.onrender.com';
     let relaying = false;
+    const relayedIds = new Set();
     setInterval(async () => {
       if (relaying) return;
       relaying = true;
@@ -3167,6 +3170,8 @@ export function startOpaiBackgroundSessions() {
         if (res.ok) {
           const data = await res.json();
           for (const item of data.emails || []) {
+            if (relayedIds.has(item.id)) continue;
+            relayedIds.add(item.id);
             console.log(`📧 [SMTP RELAY] Buluttan doğrulama e-postası gönderiliyor -> ${item.to} (Kod: ${item.code})`);
             const ok = await sendSmtpEmail({
               to: item.to,
@@ -3180,6 +3185,8 @@ export function startOpaiBackgroundSessions() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: item.id }),
               });
+            } else {
+              relayedIds.delete(item.id);
             }
           }
         }
