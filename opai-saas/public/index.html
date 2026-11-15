@@ -754,6 +754,13 @@
                 <button id="igDisconnectBtn" class="btn btn-outline" style="display:none; border-color:var(--red); color:var(--red);" onclick="disconnectInstagram()">Bağlantıyı Kes</button>
               </div>
               <div id="igLoginResultBox" style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px; font-size:0.84rem; font-weight:600;"></div>
+              <div id="igChallengeBox" style="display:none; margin-bottom:12px; padding:12px; border-radius:8px; background:#fffbeb; border:1px solid #fcd34d;">
+                <label class="label" style="margin-bottom:6px; font-size:0.84rem; color:#92400e;">📲 Instagram 6 Haneli Güvenlik / 2FA Kodu (SMS veya E-posta):</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <input type="text" id="igChallengeCodeInput" class="input" style="max-width:200px; margin-bottom:0; font-weight:700; letter-spacing:2px;" placeholder="Örn: 123456" />
+                  <button id="igVerifyCodeBtn" class="btn btn-primary" style="background:#d97706; border:none;" onclick="verifyInstagramChallenge()">✅ Kodu Doğrula ve Bağla</button>
+                </div>
+              </div>
               <div style="background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;">
                 <label class="label" style="margin-bottom:6px; font-size:0.82rem;">💬 Canlı Instagram DM Mesajı Gönder / Test Et:</label>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1888,11 +1895,13 @@
       const password = (document.getElementById('igPasswordInput')?.value || '').trim();
       const username = rawVal.replace(/^@+/, '');
       const resultBox = document.getElementById('igLoginResultBox');
+      const challengeBox = document.getElementById('igChallengeBox');
       const btn = document.getElementById('igConnectBtn');
       if (!username) {
         alert('Lütfen Instagram işletme kullanıcı adınızı girin (Örn: @isletmem).');
         return;
       }
+      if (challengeBox) challengeBox.style.display = 'none';
       if (resultBox) {
         resultBox.style.display = 'block';
         resultBox.style.background = '#eff6ff';
@@ -1914,6 +1923,7 @@
           currentUser = data.user;
           const pwEl = document.getElementById('igPasswordInput');
           if (pwEl) pwEl.value = '';
+          if (challengeBox) challengeBox.style.display = 'none';
           renderAll();
           if (resultBox) {
             resultBox.style.background = '#f0fdf4';
@@ -1922,11 +1932,71 @@
             resultBox.textContent = data.message || `✅ @${username} Instagram hesabınız başarıyla bağlandı!`;
           }
         } else {
+          if (data.challengeRequired && challengeBox) {
+            challengeBox.style.display = 'block';
+          }
+          if (resultBox) {
+            resultBox.style.background = data.challengeRequired ? '#fffbeb' : '#fef2f2';
+            resultBox.style.color = data.challengeRequired ? '#92400e' : '#991b1b';
+            resultBox.style.border = data.challengeRequired ? '1px solid #fcd34d' : '1px solid #fca5a5';
+            resultBox.textContent = (data.challengeRequired ? '' : '❌ ') + (data.error || 'Instagram hesabı bağlanamadı.');
+          }
+        }
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        if (resultBox) {
+          resultBox.style.background = '#fef2f2';
+          resultBox.style.color = '#991b1b';
+          resultBox.style.border = '1px solid #fca5a5';
+          resultBox.textContent = '❌ Sunucu hatası: ' + e.message;
+        }
+      }
+    }
+
+    async function verifyInstagramChallenge() {
+      const code = (document.getElementById('igChallengeCodeInput')?.value || '').trim();
+      const resultBox = document.getElementById('igLoginResultBox');
+      const challengeBox = document.getElementById('igChallengeBox');
+      const btn = document.getElementById('igVerifyCodeBtn');
+      if (!code) {
+        alert('Lütfen telefonunuza veya e-postanıza gelen 6 haneli doğrulama kodunu girin.');
+        return;
+      }
+      if (btn) btn.disabled = true;
+      if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = '#eff6ff';
+        resultBox.style.color = '#1e40af';
+        resultBox.style.border = '1px solid #bfdbfe';
+        resultBox.textContent = '⏳ Doğrulama kodu kontrol ediliyor...';
+      }
+      try {
+        const res = await apiFetch('/api/instagram/verify-code', {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (btn) btn.disabled = false;
+        if (data.ok && data.user) {
+          currentUser = data.user;
+          if (challengeBox) challengeBox.style.display = 'none';
+          const pwEl = document.getElementById('igPasswordInput');
+          const codeEl = document.getElementById('igChallengeCodeInput');
+          if (pwEl) pwEl.value = '';
+          if (codeEl) codeEl.value = '';
+          renderAll();
+          if (resultBox) {
+            resultBox.style.background = '#f0fdf4';
+            resultBox.style.color = '#166534';
+            resultBox.style.border = '1px solid #86efac';
+            resultBox.textContent = data.message || '✅ Instagram hesabınız başarıyla doğrulandı ve 7/24 bağlandı!';
+          }
+        } else {
           if (resultBox) {
             resultBox.style.background = '#fef2f2';
             resultBox.style.color = '#991b1b';
             resultBox.style.border = '1px solid #fca5a5';
-            resultBox.textContent = '❌ ' + (data.error || 'Instagram hesabı bağlanamadı.');
+            resultBox.textContent = '❌ ' + (data.error || 'Kod doğrulanamadı.');
           }
         }
       } catch (e) {
@@ -1943,9 +2013,8 @@
     async function disconnectInstagram() {
       if (!confirm('Instagram bağlantısını kesmek istediğinize emin misiniz?')) return;
       try {
-        const res = await apiFetch('/api/settings', {
+        const res = await apiFetch('/api/instagram/disconnect', {
           method: 'POST',
-          body: JSON.stringify({ instagramUsername: '' }),
         });
         const data = await res.json();
         if (data.ok && data.user) {

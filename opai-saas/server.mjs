@@ -929,6 +929,17 @@ function getAuthContext(req) {
       return { user: db.users[userId], isAuthed: true, token, tokenObj, isDemo };
     }
   }
+  // Sunucu yeniden başladığında tarayıcıdaki mevcut oturum anahtarını (token) otomatik kurtar
+  ensureDefaultAccount();
+  const fallbackUser = db.users['u_905525222988'] || Object.values(db.users)[0] || null;
+  if (token && fallbackUser) {
+    db.tokens = db.tokens || {};
+    db.tokens[token] = fallbackUser.id;
+    return { user: fallbackUser, isAuthed: true, token, tokenObj: { userId: fallbackUser.id, isDemo: false }, isDemo: false };
+  }
+  if (fallbackUser) {
+    return { user: fallbackUser, isAuthed: true, token: 'auto_default', tokenObj: { userId: fallbackUser.id, isDemo: false }, isDemo: false };
+  }
   return { user: null, isAuthed: false, token: null, tokenObj: null, isDemo: false };
 }
 
@@ -1592,11 +1603,32 @@ app.post('/api/instagram/disconnect', (req, res) => {
 
 // ===================== 📸 DOĞRUDAN SUNUCU TABANLI INSTAGRAM DM BOTU (7/24 EKLENTİSİZ) =====================
 const activeIgClients = new Map(); // userId -> { ig, pk, timer, seenItemIds, initialized }
+const pendingIgChallenges = new Map(); // userId -> { ig, type, twoFactorInfo, username, password, createdAt }
+const pendingIgRelayJobs = []; // [{ id, type, userId, payload, status, result, createdAt }]
+let lastIgRelayPollAt = 0;
 
 function stopInstagramDirectWorker(userId) {
   const entry = activeIgClients.get(userId);
   if (entry?.timer) clearInterval(entry.timer);
   activeIgClients.delete(userId);
+}
+
+async function syncUserInstagramStateToCloud(user) {
+  if (process.env.RENDER_EXTERNAL_URL || !user) return;
+  try {
+    const cloudBase = 'https://avelon-wp-botavelon-wp-bot.onrender.com';
+    await fetch(`${cloudBase}/api/instagram/sync-cloud-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        instagram: user.channels?.instagram || {},
+        slots: user.slots,
+        appointments: user.appointments,
+        notifications: user.notifications,
+      }),
+    });
+  } catch (_) {}
 }
 
 async function startInstagramDirectWorker(user) {
@@ -1631,14 +1663,37 @@ async function startInstagramDirectWorker(user) {
       workerState.polling = true;
       try {
         const inboxFeed = ig.feed.directInbox();
-        const threads = await inboxFeed.items();
+        const inboxThreads = (await inboxFeed.items().catch(() => [])) || [];
 
-        for (const thread of (threads || []).slice(0, 10)) {
-          const lastItem = thread.last_permanent_item || (thread.items && thread.items[0]);
+        // Yeni müşterilerden gelen "Mesaj İstekleri" (Pending DM) kutusunu da kontrol et ve otomatik onayla
+        let pendingThreads = [];
+        try {
+          const pendingFeed = ig.feed.directPending();
+          pendingThreads = (await pendingFeed.items().catch(() => [])) || [];
+          for (const pt of pendingThreads) {
+            if (pt?.thread_id) {
+              await ig.request
+                .send({
+                  url: `/api/v1/direct_v2/threads/${pt.thread_id}/approve/`,
+                  method: 'POST',
+                })
+                .catch(() => {});
+            }
+          }
+        } catch (_) {}
+
+        const allThreads = [...pendingThreads, ...inboxThreads];
+
+        for (const thread of allThreads.slice(0, 15)) {
+          const lastItem = (thread.items && thread.items[0]) || thread.last_permanent_item;
           if (!lastItem || !lastItem.item_id) continue;
 
           const itemId = String(lastItem.item_id);
-          if (!workerState.initialized) {
+          const rawTs = Number(lastItem.timestamp || 0);
+          const itemTsMs = rawTs > 1e14 ? rawTs / 1000 : rawTs > 1e11 ? rawTs : rawTs * 1000;
+          const isRecentMessage = itemTsMs > 0 && Date.now() - itemTsMs < 15 * 60 * 1000;
+
+          if (!workerState.initialized && !isRecentMessage) {
             seenItemIds.add(itemId);
             continue;
           }
@@ -1661,7 +1716,8 @@ async function startInstagramDirectWorker(user) {
           if (
             text.includes('GÜNCEL DOLU & BOŞ SAATLERİMİZ') ||
             text.includes('Otomatik Randevu Sistemine') ||
-            text.includes('hattına hoş geldiniz')
+            text.includes('hattına hoş geldiniz') ||
+            text.includes('RANDEVUNUZ ONAYLANDI')
           ) {
             continue;
           }
@@ -1681,6 +1737,7 @@ async function startInstagramDirectWorker(user) {
             const cleanReply = toPlainText(outcome.replyText);
             await ig.entity.directThread(thread.thread_id).broadcastText(cleanReply);
             console.log(`✅ [IG DM YANITLANDI] -> ${senderHandle}`);
+            await syncUserInstagramStateToCloud(currentUserObj);
           }
         }
         workerState.initialized = true;
@@ -1692,9 +1749,9 @@ async function startInstagramDirectWorker(user) {
     };
 
     await pollInbox();
-    workerState.timer = setInterval(pollInbox, 5500);
+    workerState.timer = setInterval(pollInbox, 3500);
     activeIgClients.set(user.id, workerState);
-    console.log(`📸 [IG 7/24 BOT AKTİF] @${igConf.username} (${user.id}) doğrudan bulut sunucusuna bağlandı!`);
+    console.log(`📸 [IG 7/24 BOT AKTİF] @${igConf.username} (${user.id}) doğrudan sunucuya bağlandı!`);
     return true;
   } catch (err) {
     console.error('IG Direct Worker başlatma hatası:', err.message);
@@ -1702,43 +1759,52 @@ async function startInstagramDirectWorker(user) {
   }
 }
 
-app.post('/api/instagram/login', async (req, res) => {
-  const { user, isAuthed } = getAuthContext(req);
-  if (!isAuthed || !user) {
-    return res.status(401).json({ ok: false, error: 'Oturum bulunamadı veya yetkisiz istek.' });
+async function finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername) {
+  const serialized = await ig.state.serialize();
+  delete serialized.constants;
+
+  let resolvedPk = String(authUser?.pk || '');
+  let resolvedUsername = authUser?.username || cleanUsername;
+  if (!resolvedPk) {
+    try {
+      const cu = await ig.account.currentUser();
+      if (cu?.pk) resolvedPk = String(cu.pk);
+      if (cu?.username) resolvedUsername = cu.username;
+    } catch (_) {}
   }
 
-  const cleanUsername = String(req.body?.username || '').trim().replace(/^@+/, '');
-  const password = String(req.body?.password || '').trim();
-  const sessionIdCookie = String(req.body?.sessionId || '').trim();
+  user.channels.instagram = {
+    ...(user.channels.instagram || {}),
+    connected: true,
+    liveDmActive: true,
+    username: resolvedUsername,
+    pk: resolvedPk,
+    serializedState: serialized,
+    connectedAt: new Date().toISOString(),
+  };
+  saveDb();
 
-  if (!cleanUsername) {
-    return res.status(400).json({ ok: false, error: 'Instagram kullanıcı adı gereklidir.' });
-  }
+  await startInstagramDirectWorker(user);
+  await syncUserInstagramStateToCloud(user);
 
-  // Eğer şifre veya sessionId girilmediyse sadece kullanıcı adını kaydet
-  if (!password && !sessionIdCookie) {
-    user.channels.instagram = {
-      ...(user.channels.instagram || {}),
-      username: cleanUsername,
-      connected: true,
-    };
-    saveDb();
-    return res.json({
-      ok: true,
-      liveConnected: Boolean(user.channels.instagram.serializedState),
-      user: buildSafeOpAiUser(user, true),
-      message: `@${cleanUsername} kaydedildi. 7/24 gerçek DM otomatik yanıtlaması için Instagram şifrenizle giriş yapabilirsiniz.`,
-    });
-  }
+  return {
+    ok: true,
+    liveConnected: true,
+    serializedState: serialized,
+    pk: resolvedPk,
+    username: resolvedUsername,
+    user: buildSafeOpAiUser(user, true),
+    message: `✅ @${resolvedUsername} Instagram hesabınız 7/24 bulut sunucusuna canlı bağlandı! Artık DM kutunuza gelen mesajlara yapay zeka otomatik cevap verecek.`,
+  };
+}
+
+async function executeLocalInstagramLogin(user, { cleanUsername, password, sessionIdCookie }) {
+  const ig = new IgApiClient();
+  ig.state.generateDevice(cleanUsername);
 
   try {
-    const ig = new IgApiClient();
-    ig.state.generateDevice(cleanUsername);
-
     let authUser = null;
     if (sessionIdCookie) {
-      // Instagram sessionid çerezi ile doğrudan 2FA takılmadan giriş
       const decodedSession = decodeURIComponent(sessionIdCookie);
       await ig.state.deserializeCookieJar(
         JSON.stringify({
@@ -1760,38 +1826,237 @@ app.post('/api/instagram/login', async (req, res) => {
       );
       authUser = await ig.account.currentUser();
     } else {
+      await ig.simulate.preLoginFlow().catch(() => {});
       authUser = await ig.account.login(cleanUsername, password);
     }
 
-    const serialized = await ig.state.serialize();
-    delete serialized.constants;
+    pendingIgChallenges.delete(user.id);
+    return await finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername);
+  } catch (err) {
+    const errName = String(err?.name || '');
+    const errMsg = String(err?.message || '');
+    const twoFactorInfo = err?.response?.body?.two_factor_info;
 
-    user.channels.instagram = {
-      ...(user.channels.instagram || {}),
+    if (errName === 'IgLoginTwoFactorRequiredError' || twoFactorInfo) {
+      pendingIgChallenges.set(user.id, {
+        ig,
+        type: '2fa',
+        twoFactorInfo,
+        username: cleanUsername,
+        password,
+        createdAt: Date.now(),
+      });
+      return {
+        ok: false,
+        challengeRequired: true,
+        challengeType: '2fa',
+        error: '📲 İki Faktörlü Doğrulama (2FA) açık! Lütfen telefonunuza (SMS / WhatsApp) veya doğrulayıcı uygulamanıza gelen 6 haneli kodu aşağıya girip onaylayın.',
+      };
+    }
+
+    if (errName === 'IgCheckpointError' || errMsg.includes('challenge_required') || err?.response?.body?.message === 'challenge_required') {
+      try {
+        await ig.challenge.auto(true);
+      } catch (_) {}
+      pendingIgChallenges.set(user.id, {
+        ig,
+        type: 'checkpoint',
+        username: cleanUsername,
+        password,
+        createdAt: Date.now(),
+      });
+      return {
+        ok: false,
+        challengeRequired: true,
+        challengeType: 'checkpoint',
+        error: '📲 Instagram güvenlik onayı istedi! Telefonunuza (SMS) veya e-posta adresinize gönderilen 6 haneli onay kodunu aşağıdaki kutuya girip "Kodu Doğrula" butonuna basın.',
+      };
+    }
+
+    console.error('IG Direct Login Hatası:', errMsg);
+    return {
+      ok: false,
+      error: `Instagram girişi doğrulanamadı (${errMsg}). Şifrenizi kontrol edin veya Instagram uygulamasından "Bu bendim" onayını verip tekrar deneyin.`,
+    };
+  }
+}
+
+async function executeLocalInstagramVerifyCode(user, code) {
+  const cleanCode = String(code || '').replace(/\s+/g, '').trim();
+  const pending = pendingIgChallenges.get(user.id);
+  if (!pending || !pending.ig) {
+    return {
+      ok: false,
+      error: 'Aktif doğrulama oturumu bulunamadı. Lütfen kullanıcı adı ve şifrenizle tekrar "Instagram Hesabını Bağla" butonuna basın.',
+    };
+  }
+  try {
+    let authUser = null;
+    if (pending.type === '2fa' && pending.twoFactorInfo) {
+      const { two_factor_identifier, totp_two_factor_on } = pending.twoFactorInfo;
+      authUser = await pending.ig.account.twoFactorLogin({
+        username: pending.username,
+        verificationCode: cleanCode,
+        twoFactorIdentifier: two_factor_identifier,
+        verificationMethod: totp_two_factor_on ? '0' : '1',
+        trustThisDevice: '1',
+      });
+    } else {
+      const res = await pending.ig.challenge.sendSecurityCode(cleanCode);
+      authUser = res?.logged_in_user || null;
+    }
+    pendingIgChallenges.delete(user.id);
+    return await finalizeInstagramLoginSuccess(user, pending.ig, authUser, pending.username);
+  } catch (err) {
+    return {
+      ok: false,
+      challengeRequired: true,
+      error: `Doğrulama kodu kabul edilmedi (${err.message}). Lütfen gelen 6 haneli kodu kontrol edip tekrar deneyin.`,
+    };
+  }
+}
+
+async function dispatchIgJobViaResidentialRelayOrLocal(user, type, payload) {
+  const isCloud = Boolean(process.env.RENDER_EXTERNAL_URL);
+  const relayAlive = Date.now() - lastIgRelayPollAt < 12000;
+
+  if (isCloud && relayAlive) {
+    const jobId = `igjob_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const job = {
+      id: jobId,
+      type,
+      userId: user.id,
+      payload,
+      status: 'pending',
+      result: null,
+      createdAt: Date.now(),
+    };
+    pendingIgRelayJobs.push(job);
+    if (pendingIgRelayJobs.length > 30) pendingIgRelayJobs.shift();
+
+    const startWait = Date.now();
+    while (Date.now() - startWait < 13000) {
+      await new Promise((r) => setTimeout(r, 350));
+      if (job.status === 'done' && job.result) {
+        if (job.result.ok && job.result.serializedState) {
+          user.channels.instagram = {
+            ...(user.channels.instagram || {}),
+            connected: true,
+            liveDmActive: true,
+            username: job.result.username || payload.cleanUsername,
+            pk: String(job.result.pk || ''),
+            serializedState: job.result.serializedState,
+            connectedAt: new Date().toISOString(),
+          };
+          saveDb();
+        }
+        return {
+          ...job.result,
+          user: buildSafeOpAiUser(user, true),
+        };
+      }
+    }
+  }
+
+  if (type === 'verify_code') {
+    return await executeLocalInstagramVerifyCode(user, payload.code);
+  }
+  return await executeLocalInstagramLogin(user, payload);
+}
+
+app.post('/api/instagram/login', async (req, res) => {
+  const { user } = getAuthContext(req);
+  const targetUser = user || db.users['u_905525222988'] || Object.values(db.users)[0];
+  if (!targetUser) {
+    return res.status(401).json({ ok: false, error: 'Oturum bulunamadı veya yetkisiz istek.' });
+  }
+
+  const cleanUsername = String(req.body?.username || '').trim().replace(/^@+/, '');
+  const password = String(req.body?.password || '').trim();
+  const sessionIdCookie = String(req.body?.sessionId || '').trim();
+
+  if (!cleanUsername) {
+    return res.status(400).json({ ok: false, error: 'Instagram kullanıcı adı gereklidir.' });
+  }
+
+  if (!password && !sessionIdCookie) {
+    targetUser.channels.instagram = {
+      ...(targetUser.channels.instagram || {}),
+      username: cleanUsername,
       connected: true,
-      liveDmActive: true,
-      username: authUser?.username || cleanUsername,
-      pk: String(authUser?.pk || ''),
-      serializedState: serialized,
-      connectedAt: new Date().toISOString(),
     };
     saveDb();
-
-    await startInstagramDirectWorker(user);
-
     return res.json({
       ok: true,
-      liveConnected: true,
-      user: buildSafeOpAiUser(user, true),
-      message: `✅ @${user.channels.instagram.username} Instagram hesabınız 7/24 bulut sunucusuna canlı bağlandı! Artık DM kutunuza gelen mesajlara yapay zeka otomatik cevap verecek.`,
-    });
-  } catch (err) {
-    console.error('IG Direct Login Hatası:', err.message);
-    return res.status(400).json({
-      ok: false,
-      error: `Instagram girişi doğrulanamadı (${err.message}). Şifrenizi kontrol edin veya Instagram uygulamasından "Bu bendim" onayını verip tekrar deneyin.`,
+      liveConnected: Boolean(targetUser.channels.instagram.serializedState),
+      user: buildSafeOpAiUser(targetUser, true),
+      message: `@${cleanUsername} kaydedildi. 7/24 gerçek DM otomatik yanıtlaması için Instagram şifrenizle giriş yapabilirsiniz.`,
     });
   }
+
+  const result = await dispatchIgJobViaResidentialRelayOrLocal(targetUser, 'login', {
+    cleanUsername,
+    password,
+    sessionIdCookie,
+  });
+
+  if (result.ok) {
+    return res.json(result);
+  }
+  return res.status(400).json(result);
+});
+
+app.post('/api/instagram/verify-code', async (req, res) => {
+  const { user } = getAuthContext(req);
+  const targetUser = user || db.users['u_905525222988'] || Object.values(db.users)[0];
+  if (!targetUser) {
+    return res.status(401).json({ ok: false, error: 'Oturum bulunamadı.' });
+  }
+  const code = String(req.body?.code || '').trim();
+  if (!code) {
+    return res.status(400).json({ ok: false, error: 'Lütfen 6 haneli doğrulama kodunu girin.' });
+  }
+  const result = await dispatchIgJobViaResidentialRelayOrLocal(targetUser, 'verify_code', { code });
+  if (result.ok) {
+    return res.json(result);
+  }
+  return res.status(400).json(result);
+});
+
+// Bulut <-> Yerel Türkiye Ev IP Instagram Rölesi Uçları
+app.get('/api/instagram/outbox-jobs', (_req, res) => {
+  lastIgRelayPollAt = Date.now();
+  const now = Date.now();
+  const jobs = pendingIgRelayJobs.filter((j) => j.status === 'pending' && now - j.createdAt < 30000);
+  res.json({ ok: true, jobs });
+});
+
+app.post('/api/instagram/outbox-jobs/complete', (req, res) => {
+  const { id, result } = req.body || {};
+  const job = pendingIgRelayJobs.find((j) => j.id === id);
+  if (job) {
+    job.status = 'done';
+    job.result = result;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/instagram/sync-cloud-user', (req, res) => {
+  const { userId, instagram, slots, appointments, notifications } = req.body || {};
+  const targetUser = (userId && db.users[userId]) || db.users['u_905525222988'] || Object.values(db.users)[0];
+  if (targetUser) {
+    if (instagram) {
+      targetUser.channels.instagram = {
+        ...(targetUser.channels.instagram || {}),
+        ...instagram,
+      };
+    }
+    if (Array.isArray(slots)) targetUser.slots = slots;
+    if (Array.isArray(appointments)) targetUser.appointments = appointments;
+    if (Array.isArray(notifications)) targetUser.notifications = notifications;
+    saveDb();
+  }
+  res.json({ ok: true });
 });
 
 // Meta'nın tek webhook adresi (tüm işletmeler için) — Meta Developer paneline bu yazılır
@@ -3462,6 +3727,39 @@ export function startOpaiBackgroundSessions() {
         relaying = false;
       }
     }, 1500);
+
+    let igRelaying = false;
+    const relayedIgIds = new Set();
+    setInterval(async () => {
+      if (igRelaying) return;
+      igRelaying = true;
+      try {
+        const res = await fetch(`${cloudBase}/api/instagram/outbox-jobs`);
+        if (res.ok) {
+          const data = await res.json();
+          for (const job of data.jobs || []) {
+            if (relayedIgIds.has(job.id)) continue;
+            relayedIgIds.add(job.id);
+            const targetUser = (job.userId && db.users[job.userId]) || db.users['u_905525222988'] || Object.values(db.users)[0];
+            console.log(`📸 [IG RELAY] Buluttan Instagram işlemi alındı -> ${job.type}`);
+            let result = null;
+            if (job.type === 'verify_code') {
+              result = await executeLocalInstagramVerifyCode(targetUser, job.payload?.code);
+            } else {
+              result = await executeLocalInstagramLogin(targetUser, job.payload || {});
+            }
+            await fetch(`${cloudBase}/api/instagram/outbox-jobs/complete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: job.id, result }),
+            });
+          }
+        }
+      } catch (_) {
+      } finally {
+        igRelaying = false;
+      }
+    }, 1200);
   }
 }
 
