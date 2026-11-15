@@ -3346,6 +3346,58 @@ app.get('/api/sorduk/tts', async (req, res) => {
   }
 });
 
+// ============================================================================
+// EREN PATRON - WINDOWS PC CANLI UZAKTAN BAGLANTI KÖPRÜSÜ (/api/pc-agent)
+// ============================================================================
+const pcAgentState = {
+  connected: false,
+  lastSeenAt: 0,
+  hostname: '',
+  osCaption: '',
+  lastOutput: '',
+  pendingCommand: null, // { id, cmd }
+  history: [],
+};
+
+app.post('/api/pc-agent/poll', (req, res) => {
+  pcAgentState.connected = true;
+  pcAgentState.lastSeenAt = Date.now();
+  if (req.body?.hostname) pcAgentState.hostname = String(req.body.hostname);
+  if (req.body?.osCaption) pcAgentState.osCaption = String(req.body.osCaption);
+  if (req.body?.output !== undefined && req.body?.cmdId) {
+    pcAgentState.lastOutput = String(req.body.output || '');
+    pcAgentState.history.unshift({
+      id: req.body.cmdId,
+      output: pcAgentState.lastOutput,
+      at: new Date().toISOString(),
+    });
+    if (pcAgentState.history.length > 25) pcAgentState.history.length = 25;
+    if (pcAgentState.pendingCommand && pcAgentState.pendingCommand.id === req.body.cmdId) {
+      pcAgentState.pendingCommand = null;
+    }
+  }
+  return res.json({
+    ok: true,
+    command: pcAgentState.pendingCommand,
+  });
+});
+
+app.get('/api/pc-agent/status', (_req, res) => {
+  return res.json({
+    ok: true,
+    ...pcAgentState,
+    online: pcAgentState.lastSeenAt > 0 && Date.now() - pcAgentState.lastSeenAt < 15000,
+  });
+});
+
+app.post('/api/pc-agent/exec', (req, res) => {
+  const cmd = String(req.body?.cmd || '').trim();
+  if (!cmd) return res.status(400).json({ ok: false, error: 'cmd required' });
+  const id = 'cmd_' + Date.now();
+  pcAgentState.pendingCommand = { id, cmd };
+  return res.json({ ok: true, id, cmd });
+});
+
 export const opaiApp = app;
 
 export function startOpaiBackgroundSessions() {
