@@ -951,10 +951,10 @@ function buildSafeOpAiUser(user, isAuthed) {
   if (!user) return null;
   const { passwordHash: _pw, ...rest } = user;
   if (rest.channels?.instagram) {
-    const { pageToken: _pt, accessToken: _at, serializedState: _ss, ...igSafe } = rest.channels.instagram;
+    const { pageToken: _pt, accessToken: _at, serializedState: _ss, cookieMap: _cm, ...igSafe } = rest.channels.instagram;
     rest.channels = {
       ...rest.channels,
-      instagram: { ...igSafe, liveDmActive: Boolean(user.channels.instagram.serializedState) },
+      instagram: { ...igSafe, liveDmActive: Boolean(user.channels.instagram.serializedState || user.channels.instagram.cookieMap) },
     };
   }
   return {
@@ -1631,22 +1631,150 @@ async function syncUserInstagramStateToCloud(user) {
   } catch (_) {}
 }
 
+const IG_WEB_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const IG_WEB_APP_ID = '936619743392459';
+
+function parseSetCookieJar(setCookieArray = [], existingCookieMap = {}) {
+  const map = { ...existingCookieMap };
+  for (const raw of setCookieArray) {
+    if (!raw) continue;
+    const firstPart = String(raw).split(';')[0];
+    const eqIdx = firstPart.indexOf('=');
+    if (eqIdx > 0) {
+      const k = firstPart.slice(0, eqIdx).trim();
+      const v = firstPart.slice(eqIdx + 1).trim();
+      if (v && v !== '""' && v !== 'deleted') {
+        map[k] = v;
+      }
+    }
+  }
+  return map;
+}
+
+function cookieMapToHeader(map = {}) {
+  return Object.entries(map)
+    .filter(([, v]) => Boolean(v))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+async function injectCookieMapIntoIgClient(ig, cookieMap = {}) {
+  const nowIso = new Date().toISOString();
+  const cookies = Object.entries(cookieMap).map(([key, value]) => ({
+    key,
+    value: decodeURIComponent(value),
+    domain: 'instagram.com',
+    path: '/',
+    hostOnly: false,
+    creation: nowIso,
+    lastAccessed: nowIso,
+  }));
+  await ig.state.deserializeCookieJar(
+    JSON.stringify({
+      version: 'tough-cookie@2.5.0',
+      storeType: 'MemoryCookieStore',
+      rejectPublicSuffixes: true,
+      cookies,
+    })
+  );
+}
+
+async function fetchIgWebDirectThreads(cookieMap) {
+  const cookieHeader = cookieMapToHeader(cookieMap);
+  const csrf = cookieMap.csrftoken || '';
+  const headers = {
+    'User-Agent': IG_WEB_UA,
+    'X-IG-App-ID': IG_WEB_APP_ID,
+    'X-CSRFToken': csrf,
+    'X-Requested-With': 'XMLHttpRequest',
+    Referer: 'https://www.instagram.com/direct/inbox/',
+    Cookie: cookieHeader,
+  };
+
+  let inboxThreads = [];
+  try {
+    const r = await fetch(
+      'https://www.instagram.com/api/v1/direct_v2/inbox/?persistentBadging=true&folder=&limit=15&thread_message_limit=5',
+      { headers }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      inboxThreads = d?.inbox?.threads || [];
+    }
+  } catch (_) {}
+
+  let pendingThreads = [];
+  try {
+    const rp = await fetch('https://www.instagram.com/api/v1/direct_v2/pending_inbox/?limit=10', { headers });
+    if (rp.ok) {
+      const dp = await rp.json();
+      pendingThreads = dp?.inbox?.threads || [];
+      for (const pt of pendingThreads) {
+        if (pt?.thread_id) {
+          await fetch(`https://www.instagram.com/api/v1/direct_v2/threads/${pt.thread_id}/approve/`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) {}
+
+  return [...pendingThreads, ...inboxThreads];
+}
+
+async function sendIgWebDirectText(cookieMap, threadId, text) {
+  const cookieHeader = cookieMapToHeader(cookieMap);
+  const csrf = cookieMap.csrftoken || '';
+  const clientContext = `${Date.now()}${Math.floor(100000 + Math.random() * 900000)}`;
+  const body = new URLSearchParams({
+    action: 'send_item',
+    thread_ids: `[${threadId}]`,
+    client_context: clientContext,
+    mutation_token: clientContext,
+    text,
+  });
+  const r = await fetch('https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/', {
+    method: 'POST',
+    headers: {
+      'User-Agent': IG_WEB_UA,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-IG-App-ID': IG_WEB_APP_ID,
+      'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: `https://www.instagram.com/direct/t/${threadId}/`,
+      Cookie: cookieHeader,
+    },
+    body: body.toString(),
+  });
+  return r.ok;
+}
+
 async function startInstagramDirectWorker(user) {
   if (!user || !user.id) return false;
   const igConf = user.channels?.instagram || {};
-  if (!igConf.serializedState || !igConf.username) return false;
+  if ((!igConf.serializedState && !igConf.cookieMap) || !igConf.username) return false;
 
   stopInstagramDirectWorker(user.id);
 
   try {
-    const ig = new IgApiClient();
-    ig.state.generateDevice(igConf.username);
-    await ig.state.deserialize(igConf.serializedState);
+    let ig = null;
+    if (igConf.serializedState) {
+      try {
+        ig = new IgApiClient();
+        ig.state.generateDevice(igConf.username);
+        await ig.state.deserialize(igConf.serializedState);
+      } catch (_) {
+        ig = null;
+      }
+    }
 
     const seenItemIds = new Set();
     const workerState = {
       ig,
-      pk: String(igConf.pk || ''),
+      cookieMap: igConf.cookieMap || null,
+      pk: String(igConf.pk || igConf.cookieMap?.ds_user_id || ''),
       seenItemIds,
       initialized: false,
       polling: false,
@@ -1662,27 +1790,33 @@ async function startInstagramDirectWorker(user) {
       }
       workerState.polling = true;
       try {
-        const inboxFeed = ig.feed.directInbox();
-        const inboxThreads = (await inboxFeed.items().catch(() => [])) || [];
+        let allThreads = [];
+        const activeCookieMap = currentUserObj.channels?.instagram?.cookieMap || workerState.cookieMap;
 
-        // Yeni müşterilerden gelen "Mesaj İstekleri" (Pending DM) kutusunu da kontrol et ve otomatik onayla
-        let pendingThreads = [];
-        try {
-          const pendingFeed = ig.feed.directPending();
-          pendingThreads = (await pendingFeed.items().catch(() => [])) || [];
-          for (const pt of pendingThreads) {
-            if (pt?.thread_id) {
-              await ig.request
-                .send({
-                  url: `/api/v1/direct_v2/threads/${pt.thread_id}/approve/`,
-                  method: 'POST',
-                })
-                .catch(() => {});
+        if (activeCookieMap && activeCookieMap.sessionid) {
+          allThreads = await fetchIgWebDirectThreads(activeCookieMap);
+        }
+
+        if (allThreads.length === 0 && workerState.ig) {
+          const inboxFeed = workerState.ig.feed.directInbox();
+          const inboxThreads = (await inboxFeed.items().catch(() => [])) || [];
+          let pendingThreads = [];
+          try {
+            const pendingFeed = workerState.ig.feed.directPending();
+            pendingThreads = (await pendingFeed.items().catch(() => [])) || [];
+            for (const pt of pendingThreads) {
+              if (pt?.thread_id) {
+                await workerState.ig.request
+                  .send({
+                    url: `/api/v1/direct_v2/threads/${pt.thread_id}/approve/`,
+                    method: 'POST',
+                  })
+                  .catch(() => {});
+              }
             }
-          }
-        } catch (_) {}
-
-        const allThreads = [...pendingThreads, ...inboxThreads];
+          } catch (_) {}
+          allThreads = [...pendingThreads, ...inboxThreads];
+        }
 
         for (const thread of allThreads.slice(0, 15)) {
           const lastItem = (thread.items && thread.items[0]) || thread.last_permanent_item;
@@ -1735,9 +1869,18 @@ async function startInstagramDirectWorker(user) {
 
           if (outcome?.replyText) {
             const cleanReply = toPlainText(outcome.replyText);
-            await ig.entity.directThread(thread.thread_id).broadcastText(cleanReply);
-            console.log(`✅ [IG DM YANITLANDI] -> ${senderHandle}`);
-            await syncUserInstagramStateToCloud(currentUserObj);
+            let sentOk = false;
+            if (activeCookieMap && activeCookieMap.sessionid) {
+              sentOk = await sendIgWebDirectText(activeCookieMap, thread.thread_id, cleanReply).catch(() => false);
+            }
+            if (!sentOk && workerState.ig) {
+              await workerState.ig.entity.directThread(thread.thread_id).broadcastText(cleanReply);
+              sentOk = true;
+            }
+            if (sentOk) {
+              console.log(`✅ [IG DM YANITLANDI] -> ${senderHandle}`);
+              await syncUserInstagramStateToCloud(currentUserObj);
+            }
           }
         }
         workerState.initialized = true;
@@ -1759,19 +1902,17 @@ async function startInstagramDirectWorker(user) {
   }
 }
 
-async function finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername) {
-  const serialized = await ig.state.serialize();
-  delete serialized.constants;
-
-  let resolvedPk = String(authUser?.pk || '');
-  let resolvedUsername = authUser?.username || cleanUsername;
-  if (!resolvedPk) {
+async function finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername, cookieMap = null) {
+  let serialized = null;
+  if (ig) {
     try {
-      const cu = await ig.account.currentUser();
-      if (cu?.pk) resolvedPk = String(cu.pk);
-      if (cu?.username) resolvedUsername = cu.username;
+      serialized = await ig.state.serialize();
+      delete serialized.constants;
     } catch (_) {}
   }
+
+  let resolvedPk = String(authUser?.pk || cookieMap?.ds_user_id || '');
+  let resolvedUsername = authUser?.username || cleanUsername;
 
   user.channels.instagram = {
     ...(user.channels.instagram || {}),
@@ -1779,7 +1920,8 @@ async function finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername) 
     liveDmActive: true,
     username: resolvedUsername,
     pk: resolvedPk,
-    serializedState: serialized,
+    cookieMap: cookieMap || user.channels?.instagram?.cookieMap || null,
+    serializedState: serialized || cookieMap || { webSession: true },
     connectedAt: new Date().toISOString(),
   };
   saveDb();
@@ -1790,7 +1932,8 @@ async function finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername) 
   return {
     ok: true,
     liveConnected: true,
-    serializedState: serialized,
+    cookieMap: user.channels.instagram.cookieMap,
+    serializedState: user.channels.instagram.serializedState,
     pk: resolvedPk,
     username: resolvedUsername,
     user: buildSafeOpAiUser(user, true),
@@ -1803,45 +1946,77 @@ async function executeLocalInstagramLogin(user, { cleanUsername, password, sessi
   ig.state.generateDevice(cleanUsername);
 
   try {
-    let authUser = null;
     if (sessionIdCookie) {
       const decodedSession = decodeURIComponent(sessionIdCookie);
-      await ig.state.deserializeCookieJar(
-        JSON.stringify({
-          version: 'tough-cookie@2.5.0',
-          storeType: 'MemoryCookieStore',
-          rejectPublicSuffixes: true,
-          cookies: [
-            {
-              key: 'sessionid',
-              value: decodedSession,
-              domain: 'instagram.com',
-              path: '/',
-              hostOnly: false,
-              creation: new Date().toISOString(),
-              lastAccessed: new Date().toISOString(),
-            },
-          ],
-        })
-      );
-      authUser = await ig.account.currentUser();
-    } else {
-      await ig.simulate.preLoginFlow().catch(() => {});
-      authUser = await ig.account.login(cleanUsername, password);
+      const cookieMap = { sessionid: decodedSession };
+      await injectCookieMapIntoIgClient(ig, cookieMap);
+      let authUser = null;
+      try {
+        authUser = await ig.account.currentUser();
+      } catch (_) {}
+      pendingIgChallenges.delete(user.id);
+      return await finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername, cookieMap);
     }
 
-    pendingIgChallenges.delete(user.id);
-    return await finalizeInstagramLoginSuccess(user, ig, authUser, cleanUsername);
-  } catch (err) {
-    const errName = String(err?.name || '');
-    const errMsg = String(err?.message || '');
-    const twoFactorInfo = err?.response?.body?.two_factor_info;
+    // Güncel Instagram Web Ajax Giriş Protokolü ("Your version of Instagram is out of date" hatasını %100 aşar)
+    const r1 = await fetch('https://www.instagram.com/accounts/login/', {
+      headers: {
+        'User-Agent': IG_WEB_UA,
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+    const setCookies1 = r1.headers.getSetCookie ? r1.headers.getSetCookie() : [r1.headers.get('set-cookie') || ''];
+    let cookieMap = parseSetCookieJar(setCookies1, {});
+    if (!cookieMap.csrftoken) {
+      const html = await r1.text().catch(() => '');
+      const m = html.match(/"csrf_token":"([^"]+)"/);
+      if (m) cookieMap.csrftoken = m[1];
+    }
+    const csrf = cookieMap.csrftoken || 'missing';
+    const ts = Math.floor(Date.now() / 1000);
+    const form = new URLSearchParams({
+      enc_password: `#PWD_INSTAGRAM_BROWSER:0:${ts}:${password}`,
+      username: cleanUsername,
+      queryParams: '{}',
+      optIntoOneTap: 'false',
+    });
 
-    if (errName === 'IgLoginTwoFactorRequiredError' || twoFactorInfo) {
+    const r2 = await fetch('https://www.instagram.com/api/v1/web/accounts/login/ajax/', {
+      method: 'POST',
+      headers: {
+        'User-Agent': IG_WEB_UA,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': csrf,
+        'X-IG-App-ID': IG_WEB_APP_ID,
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: 'https://www.instagram.com/accounts/login/',
+        Cookie: cookieMapToHeader(cookieMap),
+      },
+      body: form.toString(),
+    });
+
+    const setCookies2 = r2.headers.getSetCookie ? r2.headers.getSetCookie() : [r2.headers.get('set-cookie') || ''];
+    cookieMap = parseSetCookieJar(setCookies2, cookieMap);
+    const data = await r2.json().catch(() => ({}));
+
+    if (data.authenticated && cookieMap.sessionid) {
+      await injectCookieMapIntoIgClient(ig, cookieMap);
+      pendingIgChallenges.delete(user.id);
+      return await finalizeInstagramLoginSuccess(
+        user,
+        ig,
+        { pk: data.userId || cookieMap.ds_user_id, username: cleanUsername },
+        cleanUsername,
+        cookieMap
+      );
+    }
+
+    if (data.two_factor_required && data.two_factor_info) {
       pendingIgChallenges.set(user.id, {
         ig,
-        type: '2fa',
-        twoFactorInfo,
+        type: 'web_2fa',
+        twoFactorInfo: data.two_factor_info,
+        cookieMap,
         username: cleanUsername,
         password,
         createdAt: Date.now(),
@@ -1854,13 +2029,33 @@ async function executeLocalInstagramLogin(user, { cleanUsername, password, sessi
       };
     }
 
-    if (errName === 'IgCheckpointError' || errMsg.includes('challenge_required') || err?.response?.body?.message === 'challenge_required') {
+    if (data.message === 'checkpoint_required' || data.checkpoint_url) {
+      const cpUrl = data.checkpoint_url.startsWith('http')
+        ? data.checkpoint_url
+        : `https://www.instagram.com${data.checkpoint_url}`;
       try {
-        await ig.challenge.auto(true);
+        const cpRes = await fetch(cpUrl, {
+          method: 'POST',
+          headers: {
+            'User-Agent': IG_WEB_UA,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': cookieMap.csrftoken || csrf,
+            'X-IG-App-ID': IG_WEB_APP_ID,
+            'X-Requested-With': 'XMLHttpRequest',
+            Referer: cpUrl,
+            Cookie: cookieMapToHeader(cookieMap),
+          },
+          body: new URLSearchParams({ choice: '1' }).toString(),
+        });
+        const scCp = cpRes.headers.getSetCookie ? cpRes.headers.getSetCookie() : [cpRes.headers.get('set-cookie') || ''];
+        cookieMap = parseSetCookieJar(scCp, cookieMap);
       } catch (_) {}
+
       pendingIgChallenges.set(user.id, {
         ig,
-        type: 'checkpoint',
+        type: 'web_checkpoint',
+        checkpointUrl: cpUrl,
+        cookieMap,
         username: cleanUsername,
         password,
         createdAt: Date.now(),
@@ -1869,14 +2064,33 @@ async function executeLocalInstagramLogin(user, { cleanUsername, password, sessi
         ok: false,
         challengeRequired: true,
         challengeType: 'checkpoint',
-        error: '📲 Instagram güvenlik onayı istedi! Telefonunuza (SMS) veya e-posta adresinize gönderilen 6 haneli onay kodunu aşağıdaki kutuya girip "Kodu Doğrula" butonuna basın.',
+        error: '📲 Instagram güvenlik onayı istedi! Telefonunuza (SMS) veya e-posta adresinize gönderilen 6 haneli onay kodunu aşağıdaki kutuya girip "Kodu Doğrula ve Bağla" butonuna basın.',
       };
     }
 
-    console.error('IG Direct Login Hatası:', errMsg);
+    if (data.user === false) {
+      return {
+        ok: false,
+        error: `@${cleanUsername} kullanıcı adına ait bir Instagram hesabı bulunamadı. Lütfen kullanıcı adınızı kontrol edin.`,
+      };
+    }
+
+    if (data.authenticated === false) {
+      return {
+        ok: false,
+        error: 'Girdiğiniz Instagram şifresi hatalı. Lütfen şifrenizi kontrol edip tekrar deneyin.',
+      };
+    }
+
     return {
       ok: false,
-      error: `Instagram girişi doğrulanamadı (${errMsg}). Şifrenizi kontrol edin veya Instagram uygulamasından "Bu bendim" onayını verip tekrar deneyin.`,
+      error: `Instagram girişi doğrulanamadı (${data.message || 'Lütfen Instagram uygulamasından "Bu bendim" onayını verip tekrar deneyin'}).`,
+    };
+  } catch (err) {
+    console.error('IG Direct Login Hatası:', err.message);
+    return {
+      ok: false,
+      error: `Instagram girişi doğrulanamadı (${err.message}). Şifrenizi kontrol edin veya tekrar deneyin.`,
     };
   }
 }
@@ -1884,27 +2098,94 @@ async function executeLocalInstagramLogin(user, { cleanUsername, password, sessi
 async function executeLocalInstagramVerifyCode(user, code) {
   const cleanCode = String(code || '').replace(/\s+/g, '').trim();
   const pending = pendingIgChallenges.get(user.id);
-  if (!pending || !pending.ig) {
+  if (!pending) {
     return {
       ok: false,
       error: 'Aktif doğrulama oturumu bulunamadı. Lütfen kullanıcı adı ve şifrenizle tekrar "Instagram Hesabını Bağla" butonuna basın.',
     };
   }
   try {
-    let authUser = null;
-    if (pending.type === '2fa' && pending.twoFactorInfo) {
-      const { two_factor_identifier, totp_two_factor_on } = pending.twoFactorInfo;
-      authUser = await pending.ig.account.twoFactorLogin({
+    let cookieMap = { ...(pending.cookieMap || {}) };
+    const csrf = cookieMap.csrftoken || '';
+
+    if (pending.type === 'web_2fa' && pending.twoFactorInfo) {
+      const identifier = pending.twoFactorInfo.two_factor_identifier;
+      const body = new URLSearchParams({
         username: pending.username,
         verificationCode: cleanCode,
-        twoFactorIdentifier: two_factor_identifier,
-        verificationMethod: totp_two_factor_on ? '0' : '1',
-        trustThisDevice: '1',
+        identifier,
+        queryParams: '{}',
       });
-    } else {
-      const res = await pending.ig.challenge.sendSecurityCode(cleanCode);
-      authUser = res?.logged_in_user || null;
+      const r = await fetch('https://www.instagram.com/api/v1/web/accounts/login/ajax/two_factor/', {
+        method: 'POST',
+        headers: {
+          'User-Agent': IG_WEB_UA,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRFToken': csrf,
+          'X-IG-App-ID': IG_WEB_APP_ID,
+          'X-Requested-With': 'XMLHttpRequest',
+          Referer: 'https://www.instagram.com/accounts/login/two_factor',
+          Cookie: cookieMapToHeader(cookieMap),
+        },
+        body: body.toString(),
+      });
+      const sc = r.headers.getSetCookie ? r.headers.getSetCookie() : [r.headers.get('set-cookie') || ''];
+      cookieMap = parseSetCookieJar(sc, cookieMap);
+      const d = await r.json().catch(() => ({}));
+      if (d.authenticated && cookieMap.sessionid) {
+        await injectCookieMapIntoIgClient(pending.ig, cookieMap);
+        pendingIgChallenges.delete(user.id);
+        return await finalizeInstagramLoginSuccess(
+          user,
+          pending.ig,
+          { pk: d.userId || cookieMap.ds_user_id, username: pending.username },
+          pending.username,
+          cookieMap
+        );
+      }
+      return {
+        ok: false,
+        challengeRequired: true,
+        error: `2FA kodu doğrulanamadı (${d.message || 'Lütfen kodu kontrol edip tekrar deneyin'}).`,
+      };
     }
+
+    if (pending.type === 'web_checkpoint' && pending.checkpointUrl) {
+      const r = await fetch(pending.checkpointUrl, {
+        method: 'POST',
+        headers: {
+          'User-Agent': IG_WEB_UA,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRFToken': csrf,
+          'X-IG-App-ID': IG_WEB_APP_ID,
+          'X-Requested-With': 'XMLHttpRequest',
+          Referer: pending.checkpointUrl,
+          Cookie: cookieMapToHeader(cookieMap),
+        },
+        body: new URLSearchParams({ security_code: cleanCode }).toString(),
+      });
+      const sc = r.headers.getSetCookie ? r.headers.getSetCookie() : [r.headers.get('set-cookie') || ''];
+      cookieMap = parseSetCookieJar(sc, cookieMap);
+      if (cookieMap.sessionid) {
+        await injectCookieMapIntoIgClient(pending.ig, cookieMap);
+        pendingIgChallenges.delete(user.id);
+        return await finalizeInstagramLoginSuccess(
+          user,
+          pending.ig,
+          { pk: cookieMap.ds_user_id, username: pending.username },
+          pending.username,
+          cookieMap
+        );
+      }
+      return {
+        ok: false,
+        challengeRequired: true,
+        error: 'Güvenlik kodu doğrulanamadı. Lütfen gelen 6 haneli kodu kontrol edip tekrar deneyin.',
+      };
+    }
+
+    const res = await pending.ig.challenge.sendSecurityCode(cleanCode);
+    const authUser = res?.logged_in_user || null;
     pendingIgChallenges.delete(user.id);
     return await finalizeInstagramLoginSuccess(user, pending.ig, authUser, pending.username);
   } catch (err) {
@@ -1938,13 +2219,14 @@ async function dispatchIgJobViaResidentialRelayOrLocal(user, type, payload) {
     while (Date.now() - startWait < 13000) {
       await new Promise((r) => setTimeout(r, 350));
       if (job.status === 'done' && job.result) {
-        if (job.result.ok && job.result.serializedState) {
+        if (job.result.ok && (job.result.serializedState || job.result.cookieMap)) {
           user.channels.instagram = {
             ...(user.channels.instagram || {}),
             connected: true,
             liveDmActive: true,
             username: job.result.username || payload.cleanUsername,
             pk: String(job.result.pk || ''),
+            cookieMap: job.result.cookieMap || null,
             serializedState: job.result.serializedState,
             connectedAt: new Date().toISOString(),
           };
