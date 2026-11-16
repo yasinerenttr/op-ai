@@ -965,17 +965,54 @@
     };
     let authMode = 'register';
 
-    const API_BASE = window.location.hostname.includes('github.io') ? 'https://avelon-wp-botavelon-wp-bot.onrender.com' : '';
+    const CLOUD_API_BASE = 'https://avelon-wp-botavelon-wp-bot.onrender.com';
+    const LOCAL_API_BASE = 'http://localhost:4080';
+    let API_BASE = window.location.hostname.includes('github.io') ? CLOUD_API_BASE : '';
     let authToken = localStorage.getItem('opai_token') || '';
 
-    // UNIFIED MULTI-TENANT API FETCH HELPER
+    // Kaydedilmiş işletme ayarlarını localStorage'dan geri yükle (yenilemede asla kaybolmasın)
+    try {
+      const savedBackup = localStorage.getItem('opai_user_profile_backup');
+      if (savedBackup) {
+        const parsed = JSON.parse(savedBackup);
+        if (parsed && parsed.businessName) {
+          currentUser = { ...currentUser, ...parsed };
+        }
+      }
+    } catch (_) {}
+
+    function persistCurrentUserBackup() {
+      try {
+        if (currentUser && currentUser.id !== 'u_guest') {
+          localStorage.setItem('opai_user_profile_backup', JSON.stringify(currentUser));
+        }
+      } catch (_) {}
+    }
+
+    // UNIFIED MULTI-TENANT API FETCH HELPER (Yerel Mac Sunucusu + Bulut Render Çift Yönlü)
     async function apiFetch(endpoint, options = {}) {
       const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
       if (authToken) {
         headers['Authorization'] = `Bearer ${authToken}`;
       }
-      const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
-      return fetch(url, { ...options, headers });
+      if (endpoint.startsWith('http')) {
+        return fetch(endpoint, { ...options, headers });
+      }
+      if (window.location.hostname.includes('github.io')) {
+        try {
+          const localRes = await fetch(`${LOCAL_API_BASE}${endpoint}`, { ...options, headers });
+          if (localRes.ok || localRes.status === 400) {
+            API_BASE = LOCAL_API_BASE;
+            // Aynı anda buluta da kopyala (arka planda)
+            if (options.method === 'POST') {
+              fetch(`${CLOUD_API_BASE}${endpoint}`, { ...options, headers }).catch(() => {});
+            }
+            return localRes;
+          }
+        } catch (_) {}
+        return fetch(`${CLOUD_API_BASE}${endpoint}`, { ...options, headers });
+      }
+      return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
     }
 
     function showPage(pageId) {
@@ -1540,6 +1577,7 @@
     }
 
     function renderAll() {
+      persistCurrentUserBackup();
       renderNavbar();
       renderSettings();
       renderTikTokStatus();

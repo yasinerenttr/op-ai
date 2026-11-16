@@ -2141,13 +2141,32 @@ async function syncUserInstagramStateToCloud(user) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: user.id,
+        businessName: user.businessName,
+        sectorId: user.sectorId,
+        sectorName: user.sectorName,
+        operatorTone: user.operatorTone,
+        servicesText: user.servicesText,
+        locationText: user.locationText,
+        workingHoursText: user.workingHoursText,
+        autoReplyText: user.autoReplyText,
+        callGreetingText: user.callGreetingText,
+        forwardingPhone: user.forwardingPhone,
         instagram: user.channels?.instagram || {},
+        tiktok: user.channels?.tiktok || {},
         slots: user.slots,
+        calendarByDate: user.calendarByDate,
         appointments: user.appointments,
         notifications: user.notifications,
       }),
     });
   } catch (_) {}
+}
+
+if (!process.env.RENDER_EXTERNAL_URL) {
+  setInterval(() => {
+    const mainUser = db.users['u_905525222988'] || Object.values(db.users)[0];
+    if (mainUser) syncUserInstagramStateToCloud(mainUser);
+  }, 8000);
 }
 
 const IG_WEB_UA =
@@ -2950,6 +2969,67 @@ async function executeLocalInstagramLogin(user, { cleanUsername, password, sessi
   ig.state.generateDevice(cleanUsername);
 
   try {
+    // 0) Eğer Chrome CDP Port 9242 üzerinde veya kullanıcı profilinde zaten canlı Instagram oturumu (sessionid) açıksa -> ŞİFRE / 2FA KODU İSTEMEDEN ANINDA BAĞLA!
+    try {
+      const targets = await fetch('http://127.0.0.1:9242/json').then((r) => r.json());
+      const page = (targets || []).find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+      if (page) {
+        const ws = new WebSocket(page.webSocketDebuggerUrl);
+        await new Promise((res, rej) => {
+          const t = setTimeout(() => rej(new Error('timeout')), 1500);
+          ws.addEventListener('open', () => {
+            clearTimeout(t);
+            res();
+          });
+          ws.addEventListener('error', rej);
+        });
+        const cookieRes = await new Promise((resolve) => {
+          const id = Math.floor(Math.random() * 1e6);
+          const timer = setTimeout(() => resolve(null), 1500);
+          const h = (ev) => {
+            try {
+              const m = JSON.parse(ev.data);
+              if (m.id === id) {
+                clearTimeout(timer);
+                ws.removeEventListener('message', h);
+                resolve(m.result);
+              }
+            } catch (_) {}
+          };
+          ws.addEventListener('message', h);
+          ws.send(JSON.stringify({ id, method: 'Network.getAllCookies', params: {} }));
+        });
+        ws.close();
+        const igCookies = (cookieRes?.cookies || []).filter((c) => String(c.domain || '').includes('instagram.com'));
+        const cdpMap = {};
+        for (const c of igCookies) {
+          if (c.name && c.value) cdpMap[c.name] = c.value;
+        }
+        if (cdpMap.sessionid) {
+          pendingIgChallenges.delete(user.id);
+          return await finalizeInstagramLoginSuccess(
+            user,
+            ig,
+            { pk: cdpMap.ds_user_id || '', username: cleanUsername },
+            cleanUsername,
+            cdpMap
+          );
+        }
+      }
+    } catch (_) {}
+
+    if (user.channels?.instagram?.cookieMap?.sessionid && !sessionIdCookie) {
+      const existingMap = user.channels.instagram.cookieMap;
+      pendingIgChallenges.delete(user.id);
+      return await finalizeInstagramLoginSuccess(
+        user,
+        ig,
+        { pk: existingMap.ds_user_id || user.channels.instagram.pk || '', username: cleanUsername },
+        cleanUsername,
+        existingMap
+      );
+    }
+
     if (sessionIdCookie) {
       const decodedSession = decodeURIComponent(sessionIdCookie);
       const cookieMap = { sessionid: decodedSession };
@@ -3344,16 +3424,51 @@ app.post('/api/instagram/outbox-jobs/complete', (req, res) => {
 });
 
 app.post('/api/instagram/sync-cloud-user', (req, res) => {
-  const { userId, instagram, slots, appointments, notifications } = req.body || {};
+  const {
+    userId,
+    businessName,
+    sectorId,
+    sectorName,
+    operatorTone,
+    servicesText,
+    locationText,
+    workingHoursText,
+    autoReplyText,
+    callGreetingText,
+    forwardingPhone,
+    instagram,
+    tiktok,
+    slots,
+    calendarByDate,
+    appointments,
+    notifications,
+  } = req.body || {};
   const targetUser = (userId && db.users[userId]) || db.users['u_905525222988'] || Object.values(db.users)[0];
   if (targetUser) {
+    if (businessName) targetUser.businessName = businessName;
+    if (sectorId) targetUser.sectorId = sectorId;
+    if (sectorName) targetUser.sectorName = sectorName;
+    if (operatorTone) targetUser.operatorTone = operatorTone;
+    if (servicesText) targetUser.servicesText = servicesText;
+    if (locationText) targetUser.locationText = locationText;
+    if (workingHoursText) targetUser.workingHoursText = workingHoursText;
+    if (autoReplyText) targetUser.autoReplyText = autoReplyText;
+    if (callGreetingText) targetUser.callGreetingText = callGreetingText;
+    if (forwardingPhone) targetUser.forwardingPhone = forwardingPhone;
     if (instagram) {
       targetUser.channels.instagram = {
         ...(targetUser.channels.instagram || {}),
         ...instagram,
       };
     }
+    if (tiktok) {
+      targetUser.channels.tiktok = {
+        ...(targetUser.channels.tiktok || {}),
+        ...tiktok,
+      };
+    }
     if (Array.isArray(slots)) targetUser.slots = slots;
+    if (calendarByDate && typeof calendarByDate === 'object') targetUser.calendarByDate = calendarByDate;
     if (Array.isArray(appointments)) targetUser.appointments = appointments;
     if (Array.isArray(notifications)) targetUser.notifications = notifications;
     saveDb();
