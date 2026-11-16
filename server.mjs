@@ -419,6 +419,12 @@ function buildSlotMenuMessage(user, platform = 'whatsapp') {
 function parseSelectedSlotKey(text = '') {
   let lower = text.toLocaleLowerCase('tr-TR').trim();
   lower = lower.replace(/[\u2019\u2018`']/g, "'");
+  // Tarih ifadelerini ("20 kasım 2026", "15.11.2026") saat çözümlemesinden önce temizle ki gün sayısı saat sanılmasın
+  lower = lower.replace(
+    /\b\d{1,2}\s+(?:ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik)(?:\s+\d{4})?\b/gi,
+    ' '
+  );
+  lower = lower.replace(/\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b/g, ' ');
 
   const wordNums = [
     { w: /(?<![a-zçğıöşü0-9])yirmi(?![a-zçğıöşü0-9])/gui, d: '20' },
@@ -540,12 +546,155 @@ async function generateSmartBusinessAiReply(user, senderName, text, freeListText
   return null;
 }
 
+const TR_MONTHS = {
+  ocak: 1,
+  şubat: 2,
+  subat: 2,
+  mart: 3,
+  nisan: 4,
+  mayıs: 5,
+  mayis: 5,
+  haziran: 6,
+  temmuz: 7,
+  ağustos: 8,
+  agustos: 8,
+  eylül: 9,
+  eylul: 9,
+  ekim: 10,
+  kasım: 11,
+  kasim: 11,
+  aralık: 12,
+  aralik: 12,
+};
+
+const TR_WEEKDAYS = [
+  { rx: /\bpazar\b/i, day: 0 },
+  { rx: /\bpazartesi\b/i, day: 1 },
+  { rx: /\bsal[ıi]\b/i, day: 2 },
+  { rx: /\b[çc]ar[şs]amba\b/i, day: 3 },
+  { rx: /\bper[şs]embe\b/i, day: 4 },
+  { rx: /\bcuma\b/i, day: 5 },
+  { rx: /\bcumartesi\b/i, day: 6 },
+];
+
+function toDateIsoLocal(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatTrDateFull(dateIso) {
+  try {
+    const [y, m, d] = String(dateIso).split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString('tr-TR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      weekday: 'long',
+    });
+  } catch (_) {
+    return dateIso;
+  }
+}
+
+// GÜN / HAFTA / AY / YIL DOĞAL DİL TARİH ÇÖZÜCÜ
+function parseAppointmentDateInfo(text = '') {
+  const lower = String(text || '').toLocaleLowerCase('tr-TR').trim();
+  const now = new Date();
+  let target = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let explicitDate = false;
+
+  // 1) DD.MM.YYYY veya DD/MM/YYYY (Örn: 20.11.2026)
+  const dmy = lower.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b/);
+  if (dmy) {
+    const day = Number(dmy[1]);
+    const month = Number(dmy[2]);
+    const year = dmy[3] ? Number(dmy[3]) : now.getFullYear();
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      target = new Date(year, month - 1, day);
+      explicitDate = true;
+    }
+  }
+
+  // 2) "20 kasım", "15 aralık 2026", "5 ocak 2027"
+  if (!explicitDate) {
+    const monthNames = Object.keys(TR_MONTHS).join('|');
+    const dmMatch = lower.match(new RegExp(`\\b(\\d{1,2})\\s+(${monthNames})(?:\\s+(\\d{4}))?\\b`, 'i'));
+    if (dmMatch) {
+      const day = Number(dmMatch[1]);
+      const month = TR_MONTHS[dmMatch[2].toLocaleLowerCase('tr-TR')];
+      let year = dmMatch[3] ? Number(dmMatch[3]) : now.getFullYear();
+      const candidate = new Date(year, month - 1, day);
+      if (!dmMatch[3] && candidate < target) {
+        year += 1;
+      }
+      target = new Date(year, month - 1, day);
+      explicitDate = true;
+    }
+  }
+
+  // 3) "yarın", "öbür gün", "ertesi gün", "haftaya ..."
+  if (!explicitDate) {
+    if (/\b(öbür\s*gün|obur\s*gun|ertesi\s*gün|ertesi\s*gun)\b/i.test(lower)) {
+      target.setDate(target.getDate() + 2);
+      explicitDate = true;
+    } else if (/\b(yarın|yarin)\b/i.test(lower)) {
+      target.setDate(target.getDate() + 1);
+      explicitDate = true;
+    } else {
+      const isNextWeek = /\b(haftaya|gelecek\s*hafta|önümüzdeki\s*hafta|onumuzdeki\s*hafta)\b/i.test(lower);
+      for (const wd of TR_WEEKDAYS) {
+        if (wd.rx.test(lower)) {
+          let diff = (wd.day - target.getDay() + 7) % 7;
+          if (diff === 0 || isNextWeek) diff += 7;
+          target.setDate(target.getDate() + diff);
+          explicitDate = true;
+          break;
+        }
+      }
+      if (!explicitDate && isNextWeek) {
+        target.setDate(target.getDate() + 7);
+        explicitDate = true;
+      }
+    }
+  }
+
+  const dateIso = toDateIsoLocal(target);
+  return {
+    dateIso,
+    dateLabel: formatTrDateFull(dateIso),
+    explicitDate,
+  };
+}
+
+function getSlotsForDate(user, dateIso) {
+  const todayIso = toDateIsoLocal(new Date());
+  if (!user.calendarByDate || typeof user.calendarByDate !== 'object') {
+    user.calendarByDate = {};
+  }
+  if (!dateIso || dateIso === todayIso) {
+    if (!Array.isArray(user.slots) || user.slots.length === 0) {
+      user.slots = createDefaultSlots();
+    }
+    user.calendarByDate[todayIso] = user.slots;
+    return user.slots;
+  }
+  if (!Array.isArray(user.calendarByDate[dateIso])) {
+    user.calendarByDate[dateIso] = createDefaultSlots();
+  }
+  return user.calendarByDate[dateIso];
+}
+
 // GERÇEK GELEN MESAJ İŞLEME MOTORU (WhatsApp, Instagram Webhook ve TikTok Webhook Ortak Kullanır)
-async function handleIncomingChannelMessage(user, { platform = 'whatsapp', senderId = '', senderName = 'Müşteri', text = '' }) {
+async function handleIncomingChannelMessage(user, { platform = 'whatsapp', senderId = '', senderName = 'Müşteri', text = '', isAdReferral = false, adTitle = '' }) {
   if (!user.botEnabled) return null;
   const plan = PRICING_PLANS[user.planId] || PRICING_PLANS.omni_1490;
   const platTitle = getPlatformTitle(platform);
-  const freeListText = (user.slots || [])
+  const dateInfo = parseAppointmentDateInfo(text);
+  const activeSlots = getSlotsForDate(user, dateInfo.dateIso);
+  const freeListText = (activeSlots || [])
     .filter((s) => s.status === 'free')
     .map((s) => `*Saat ${s.shortHour}* (${s.time24})`)
     .join(', ');
@@ -562,9 +711,36 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
   const lower = text.toLocaleLowerCase('tr-TR').trim();
   const targetSlotKey = parseSelectedSlotKey(text);
 
+  // 1b) META REKLAM (SPONSORLU REKLAM TIKLAMASI) OTOMATİK KARŞILAMA SİSTEMİ
+  const isMetaAdTrigger =
+    isAdReferral ||
+    /(reklam|sponsorlu|ilan|kampanya|bizimle ilgilendiniz|ilgilendim|reklamdan|bilgi almak istiyorum|fiyat ve randevu bilgisi)/i.test(lower);
+
+  if (isMetaAdTrigger && !targetSlotKey) {
+    const campaignOffer =
+      user.metaAdGreetingText ||
+      `🎯 Merhaba *${senderName}*! Sponsorlu reklamımız üzerinden *${user.businessName}* ile ilgilendiğiniz için çok teşekkür ederiz, buyrun size hemen yardımcı olalım! ✨`;
+    const services = user.servicesText || 'VIP Hizmet & Özel Kampanya Paketlerimiz mevcuttur.';
+    const loc = user.locationText || 'Merkez Şube';
+    return {
+      type: 'meta_ad_welcome',
+      replyText:
+        `${campaignOffer}\n\n` +
+        `🎁 *Reklama Özel Hizmet & Fiyatlarımız:*\n${services}\n\n` +
+        `📍 *Adresimiz:* ${loc}\n` +
+        `📅 *${dateInfo.dateLabel} Müsait Saatlerimiz:* ${freeListText || 'Bugün boş saat kalmadı'}\n\n` +
+        `👉 Hemen randevunuzu oluşturmak için istediğiniz günü ve saati yazmanız yeterlidir (Örn: *"Saat 6"*, *"Yarın saat 3"* veya *"20 Kasım saat 5"*):`,
+      voiceText: plan.voiceReply
+        ? `Merhaba ${senderName}, reklamımız üzerinden bizimle ilgilendiğiniz için teşekkür ederiz. Size özel kampanya fiyatlarımızı ve müsait randevu saatlerimizi gönderdim.`
+        : null,
+    };
+  }
+
   // 2) RANDEVU İPTAL KOMUTU
   if (lower.includes('iptal')) {
-    const foundSlot = user.slots.find(
+    const foundSlot = activeSlots.find(
+      (s) => s.status === 'busy' && (s.bookedPhone === senderId || s.bookedBy === senderName || (targetSlotKey && s.key === targetSlotKey))
+    ) || (user.slots || []).find(
       (s) => s.status === 'busy' && (s.bookedPhone === senderId || s.bookedBy === senderName || (targetSlotKey && s.key === targetSlotKey))
     );
     if (foundSlot) {
@@ -587,6 +763,26 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
 
   // 3) SAAT BELİRTİLMEDİYSE FİYAT / KONUM / GERÇEK YAPAY ZEKA SORU-CEVAP / GENEL MENÜ YANITI
   if (!targetSlotKey) {
+    // Eğer müşteri belirli bir gün/hafta/ay/yıl sorduysa (Örn: "Yarın boş saat var mı?", "20 Kasım müsait mi?")
+    if (dateInfo.explicitDate) {
+      return {
+        type: 'date_slots',
+        replyText:
+          `📅 *${user.businessName} — ${dateInfo.dateLabel} Randevu Tablosu:*\n\n` +
+          activeSlots
+            .map((s) =>
+              s.status === 'free'
+                ? `🟢 *Saat ${s.shortHour}* (${s.time24}) — *BOŞ (Müsait)* ✅`
+                : `🔴 *Saat ${s.shortHour}* (${s.time24}) — *DOLU* ❌`
+            )
+            .join('\n') +
+          `\n\n👉 *${dateInfo.dateLabel}* tarihine randevu almak için istediğiniz saati yazabilirsiniz (Örn: *"${dateInfo.dateLabel.split(' ').slice(0, 2).join(' ')} saat 6"* veya *"Yarın saat 3"*):`,
+        voiceText: plan.voiceReply
+          ? `${dateInfo.dateLabel} tarihi için müsait saatlerimizi gönderdim, istediğiniz saati yazabilirsiniz.`
+          : null,
+      };
+    }
+
     const isPriceAsk =
       /(fiyat|ücret|ucret|kaç tl|kac tl|ne kadar|kaç para|kac para|tarife|hizmet|neler var|paket|saç kesim|sac kesim|sakal|cilt bakım|cilt bakim)/i.test(
         lower
@@ -599,7 +795,7 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
           `💰 *${user.businessName}* (${user.sectorName || 'Hizmet'}) *Güncel Hizmet & Fiyatlarımız:*\n\n` +
           `${services}\n\n` +
           `🟢 *Müsait Saatlerimiz:* ${freeListText || 'Bugün boş saat kalmadı'}\n` +
-          `👉 Randevu almak istediğiniz saatin numarasını yazabilirsiniz (Örn: *"Saat 6"*):`,
+          `👉 Randevu almak istediğiniz gün ve saati yazabilirsiniz (Örn: *"Saat 6"* veya *"Yarın saat 4"*):`,
         voiceText: plan.voiceReply
           ? `${user.businessName} güncel hizmet listemiz şöyledir: ${services.replace(/\n+/g, ', ')}. Randevu için saat numarasını söyleyebilirsiniz.`
           : null,
@@ -620,7 +816,7 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
           `📌 *Adres:* ${loc}\n` +
           `🕒 *Çalışma Saatleri:* ${hrs}\n\n` +
           `🟢 *Bugünkü Boş Saatler:* ${freeListText || 'Bugün boş saat kalmadı'}\n` +
-          `👉 Randevu almak isterseniz saat numarasını yazmanız yeterli (Örn: *"6"*):`,
+          `👉 Randevu almak isterseniz gün ve saat numarasını yazmanız yeterli (Örn: *"6"* veya *"Yarın saat 5"*):`,
         voiceText: plan.voiceReply
           ? `Adresimiz: ${loc}. Çalışma saatlerimiz ${hrs}. Hangi saat için randevu oluşturmamı istersiniz?`
           : null,
@@ -654,9 +850,9 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
     };
   }
 
-  const slot = user.slots.find((s) => s.key === targetSlotKey);
+  const slot = activeSlots.find((s) => s.key === targetSlotKey);
   if (!slot) {
-    const freeList = (user.slots || [])
+    const freeList = (activeSlots || [])
       .filter((s) => s.status === 'free')
       .map((s) => `*Saat ${s.shortHour}* (${s.time24})`)
       .join(', ');
@@ -664,8 +860,8 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
       type: 'invalid_slot',
       replyText:
         `⚠️ İşletmemiz *13:00 - 20:00* saatleri arasında randevu kabul etmektedir. Seçtiğiniz saat için randevu bulunmamaktadır.\n\n` +
-        `🟢 *Müsait Saatlerimiz:* ${freeList || 'Bugün boş saat kalmadı'}\n` +
-        `👉 Randevu almak istediğiniz saatin numarasını yazabilirsiniz (Örn: *"Saat 6"* veya *"1"*):`,
+        `🟢 *${dateInfo.dateLabel} Müsait Saatlerimiz:* ${freeList || 'Bu tarihte boş saat kalmadı'}\n` +
+        `👉 Randevu almak istediğiniz saatin numarasını yazabilirsiniz (Örn: *"Saat 6"* veya *"Yarın saat 2"*):`,
       voiceText: plan.voiceReply
         ? `İşletmemiz 13:00 ile 20:00 saatleri arasında hizmet vermektedir. Lütfen çalışma saatlerimiz dahilinde boş bir saat seçiniz.`
         : null,
@@ -674,16 +870,16 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
 
   // 4) SEÇİLEN SAAT DOLUYSA
   if (slot.status === 'busy') {
-    const freeList = user.slots
+    const freeList = activeSlots
       .filter((s) => s.status === 'free')
       .map((s) => `*Saat ${s.shortHour}* (${s.time24})`)
       .join(', ');
     return {
       type: 'busy_error',
       replyText:
-        `⚠️ Üzgünüz, *Saat ${slot.shortHour}* (${slot.time24}) şu anda *DOLUDUR* ❌\n\n` +
-        `🟢 *Müsait (BOŞ) Saatlerimiz:* ${freeList || 'Bugün boş saat kalmadı'}\n\n` +
-        `👉 Lütfen boş olan saatlerden birini yazın (Örn: *"6"* veya *"1"*):`,
+        `⚠️ Üzgünüz, *${dateInfo.dateLabel}* tarihinde *Saat ${slot.shortHour}* (${slot.time24}) şu anda *DOLUDUR* ❌\n\n` +
+        `🟢 *Müsait (BOŞ) Saatlerimiz:* ${freeList || 'Bu tarihte boş saat kalmadı'}\n\n` +
+        `👉 Lütfen boş olan saatlerden birini veya başka bir günü yazın (Örn: *"6"* veya *"Yarın saat ${slot.shortHour}"*):`,
       voiceText: plan.voiceReply ? `Üzgünüz, saat ${slot.shortHour} şu anda dolu. Lütfen boş saatlerimizden birini seçin.` : null,
     };
   }
@@ -693,13 +889,22 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
   slot.bookedBy = senderName;
   slot.bookedPhone = senderId;
   slot.platform = platform;
+  slot.dateIso = dateInfo.dateIso;
 
   const nowTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const [yy, mm, dd] = dateInfo.dateIso.split('-').map(Number);
+  const [hh, min] = String(slot.time24 || '13:00').split(':').map(Number);
+  const targetTimestampMs = new Date(yy, mm - 1, dd, hh || 13, min || 0, 0).getTime();
+
   const appt = {
     id: Date.now(),
-    code: `RNV-${slot.shortHour}00`,
+    code: `RNV-${dateInfo.dateIso.slice(5).replace('-', '')}-${slot.shortHour}00`,
     slotKey: slot.shortHour,
     time24: slot.time24,
+    dateIso: dateInfo.dateIso,
+    dateLabel: dateInfo.dateLabel,
+    targetTimestampMs,
+    remindersSent: { dayBefore: false, hourBefore: false, manualCount: 0 },
     customerName: senderName,
     customerPhone: senderId,
     platform,
@@ -709,13 +914,14 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
 
   user.appointments.unshift(appt);
 
-  const notifText = `🔔 [${platTitle}] ${senderName} (${senderId}), Saat ${slot.shortHour} (${slot.time24}) için randevu oluşturdu!`;
+  const notifText = `🔔 [${platTitle}] ${senderName} (${senderId}), ${dateInfo.dateLabel} — Saat ${slot.shortHour} (${slot.time24}) için randevu oluşturdu!`;
   user.notifications.unshift({
     id: appt.id,
     time: nowTime,
     platform,
     text: notifText,
     slotKey: slot.shortHour,
+    dateIso: dateInfo.dateIso,
   });
   if (user.notifications.length > 50) user.notifications.pop();
   saveDb();
@@ -729,11 +935,12 @@ async function handleIncomingChannelMessage(user, { platform = 'whatsapp', sende
       `✅ *RANDEVUNUZ ONAYLANDI!* 🎉\n\n` +
       `🏢 *İşletme:* ${user.businessName}\n` +
       `👤 *Müşteri:* ${senderName}\n` +
+      `📅 *Tarih:* ${dateInfo.dateLabel}\n` +
       `🕒 *Seçilen Saat:* *Saat ${slot.shortHour}* (${slot.time24})\n` +
       `🔢 *Randevu Kodu:* #${appt.code}\n\n` +
-      `📌 *Saat ${slot.shortHour}* tüm kanallarda sizin adınıza *DOLU* olarak ayrılmıştır. İptal için *"iptal"* yazabilirsiniz.`,
+      `⏰ Randevu saatiniz yaklaştığında size otomatik hatırlatma mesajı gönderilecektir. İptal için *"iptal"* yazabilirsiniz.`,
     voiceText: plan.voiceReply
-      ? `Teşekkür ederiz ${senderName}. Saat ${slot.shortHour} için randevunuz başarıyla oluşturuldu.`
+      ? `Teşekkür ederiz ${senderName}. ${dateInfo.dateLabel} saat ${slot.shortHour} için randevunuz başarıyla oluşturuldu.`
       : null,
   };
 }
@@ -1350,22 +1557,26 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-// 4) SAAT DOLU / BOŞ DEĞİŞTİRME (Web & Expo Mobil)
+// 4) SAAT DOLU / BOŞ DEĞİŞTİRME (Web & Expo Mobil - Gün/Hafta/Ay/Yıl Destekli)
 app.post('/api/slots/toggle', (req, res) => {
   const { user, isAuthed } = getAuthContext(req);
   if (!isAuthed || !user) return res.status(401).json({ ok: false, error: 'Oturum bulunamadı veya yetkisiz istek.' });
-  const { slotKey, action, customerName, customerPhone, platform } = req.body || {};
-  const slot = (user.slots || []).find((s) => s.key === String(slotKey));
+  const { slotKey, action, customerName, customerPhone, platform, dateIso } = req.body || {};
+  const targetDateIso = dateIso || toDateIsoLocal(new Date());
+  const targetSlots = getSlotsForDate(user, targetDateIso);
+  const slot = (targetSlots || []).find((s) => s.key === String(slotKey));
   if (slot) {
     const shouldBook = action === 'book' || (action !== 'free' && slot.status !== 'busy');
     const nowTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const dateLabel = formatTrDateFull(targetDateIso);
     if (!shouldBook) {
       slot.status = 'free';
       slot.bookedBy = null;
       slot.bookedPhone = null;
       slot.platform = null;
       (user.appointments || []).forEach((a) => {
-        if (String(a.slotKey) === String(slot.shortHour) && a.status === 'approved') {
+        const sameDate = !a.dateIso || a.dateIso === targetDateIso;
+        if (sameDate && String(a.slotKey) === String(slot.shortHour) && a.status === 'approved') {
           a.status = 'cancelled';
         }
       });
@@ -1377,14 +1588,22 @@ app.post('/api/slots/toggle', (req, res) => {
       slot.bookedBy = targetName;
       slot.bookedPhone = targetPhone;
       slot.platform = targetPlatform;
+      slot.dateIso = targetDateIso;
       if (!Array.isArray(user.appointments)) user.appointments = [];
       if (!Array.isArray(user.notifications)) user.notifications = [];
       const apptId = Date.now();
+      const [yy, mm, dd] = targetDateIso.split('-').map(Number);
+      const [hh, min] = String(slot.time24 || '13:00').split(':').map(Number);
+      const targetTimestampMs = new Date(yy, mm - 1, dd, hh || 13, min || 0, 0).getTime();
       user.appointments.unshift({
         id: apptId,
-        code: `RNV-${slot.shortHour}00`,
+        code: `RNV-${targetDateIso.slice(5).replace('-', '')}-${slot.shortHour}00`,
         slotKey: slot.shortHour,
         time24: slot.time24,
+        dateIso: targetDateIso,
+        dateLabel,
+        targetTimestampMs,
+        remindersSent: { dayBefore: false, hourBefore: false, manualCount: 0 },
         customerName: targetName,
         customerPhone: targetPhone,
         platform: targetPlatform,
@@ -1397,15 +1616,240 @@ app.post('/api/slots/toggle', (req, res) => {
           time: nowTime,
           platform: targetPlatform,
           slotKey: slot.shortHour,
-          text: `📅 [${getPlatformTitle(targetPlatform)}] ${targetName}, Saat ${slot.shortHour} (${slot.time24}) için takvime kaydedildi.`,
+          dateIso: targetDateIso,
+          text: `📅 [${getPlatformTitle(targetPlatform)}] ${targetName}, ${dateLabel} — Saat ${slot.shortHour} (${slot.time24}) için takvime kaydedildi.`,
         });
         if (user.notifications.length > 50) user.notifications.pop();
       }
     }
     saveDb();
   }
-  res.json({ ok: true, user: buildSafeOpAiUser(user, isAuthed) });
+  res.json({
+    ok: true,
+    dateIso: targetDateIso,
+    dateLabel: formatTrDateFull(targetDateIso),
+    slots: targetSlots,
+    user: buildSafeOpAiUser(user, isAuthed),
+  });
 });
+
+// 4b) GÜN / HAFTA / AY / YIL PROFESYONEL TAKVİM GÖRÜNÜMÜ UCU
+app.get('/api/calendar/slots', (req, res) => {
+  const { user, isAuthed } = getAuthContext(req);
+  const targetUser = user || db.users['u_905525222988'] || Object.values(db.users)[0];
+  if (!targetUser) return res.status(401).json({ ok: false });
+  const dateIso = String(req.query?.date || toDateIsoLocal(new Date())).trim();
+  const slots = getSlotsForDate(targetUser, dateIso);
+  const allAppts = (targetUser.appointments || []).filter((a) => a.status === 'approved');
+
+  const [selY, selM, selD] = dateIso.split('-').map(Number);
+  const selDateObj = new Date(selY, (selM || 1) - 1, selD || 1);
+  const weekStart = new Date(selDateObj);
+  weekStart.setDate(selDateObj.getDate() - ((selDateObj.getDay() + 6) % 7));
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  const dayCount = allAppts.filter((a) => (a.dateIso || toDateIsoLocal(new Date())) === dateIso).length;
+  const weekCount = allAppts.filter((a) => {
+    const dStr = a.dateIso || toDateIsoLocal(new Date());
+    const [y, m, d] = dStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt >= weekStart && dt <= weekEnd;
+  }).length;
+  const monthPrefix = `${selY}-${String(selM).padStart(2, '0')}`;
+  const monthCount = allAppts.filter((a) => (a.dateIso || toDateIsoLocal(new Date())).startsWith(monthPrefix)).length;
+  const yearPrefix = `${selY}-`;
+  const yearCount = allAppts.filter((a) => (a.dateIso || toDateIsoLocal(new Date())).startsWith(yearPrefix)).length;
+
+  res.json({
+    ok: true,
+    dateIso,
+    dateLabel: formatTrDateFull(dateIso),
+    slots,
+    summary: {
+      dayCount,
+      weekCount,
+      monthCount,
+      yearCount,
+    },
+    user: buildSafeOpAiUser(targetUser, isAuthed),
+  });
+});
+
+// 4c) OTOMATİK VE MANUEL RANDEVU HATIRLATMA SİSTEMİ
+async function dispatchAppointmentReminderMessage(user, appt, reasonLabel = 'Randevu Hatırlatması') {
+  const dateText = appt.dateLabel || formatTrDateFull(appt.dateIso || toDateIsoLocal(new Date()));
+  const loc = user.locationText || 'Merkez Şube';
+  const msgText =
+    `⏰ *${reasonLabel.toUpperCase()}* 🔔\n\n` +
+    `Sayın *${appt.customerName}*,\n` +
+    `*${user.businessName}* işletmemizde yaklaşan randevunuzu hatırlatmak isteriz:\n\n` +
+    `📅 *Tarih:* ${dateText}\n` +
+    `🕒 *Saat:* Saat ${appt.slotKey} (${appt.time24})\n` +
+    `📍 *Adres:* ${loc}\n` +
+    `🔢 *Randevu Kodu:* #${appt.code || 'RNV'}\n\n` +
+    `📌 Randevunuzda bir değişiklik veya iptal durumu varsa *"iptal"* yazarak bize bildirebilirsiniz. Sizi bekliyoruz! ✨`;
+
+  let delivered = false;
+  // 1) WhatsApp üzerinden gönder
+  if (appt.platform === 'whatsapp' || /^[0-9+]{10,15}$/.test(String(appt.customerPhone || '').replace(/\s+/g, ''))) {
+    const rt = activeSockets.get(user.id);
+    const cleanPh = cleanNumber(appt.customerPhone);
+    if (rt?.sock && cleanPh && cleanPh.length >= 10) {
+      try {
+        await rt.sock.sendMessage(`${cleanPh}@s.whatsapp.net`, { text: msgText });
+        delivered = true;
+      } catch (_) {}
+    }
+  }
+
+  // 2) Instagram CDP üzerinden açık sohbete gönder
+  if (!delivered && appt.platform === 'instagram') {
+    try {
+      const targets = await fetch('http://127.0.0.1:9242/json').then((r) => r.json());
+      const page = (targets || []).find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
+      if (page) {
+        const ws = new WebSocket(page.webSocketDebuggerUrl);
+        await new Promise((res, rej) => {
+          const t = setTimeout(() => rej(new Error('timeout')), 1500);
+          ws.addEventListener('open', () => {
+            clearTimeout(t);
+            res();
+          });
+          ws.addEventListener('error', rej);
+        });
+        const send = (method, params = {}) =>
+          new Promise((resolve) => {
+            const id = Math.floor(Math.random() * 1e6);
+            const timer = setTimeout(() => resolve(null), 2000);
+            const h = (ev) => {
+              try {
+                const m = JSON.parse(ev.data);
+                if (m.id === id) {
+                  clearTimeout(timer);
+                  ws.removeEventListener('message', h);
+                  resolve(m.result);
+                }
+              } catch (_) {}
+            };
+            ws.addEventListener('message', h);
+            ws.send(JSON.stringify({ id, method, params }));
+          });
+        const cleanReply = msgText.replace(/\*/g, '').replace(/\n+/g, ' | ').trim();
+        cdpRepliedMessages.add(`/direct/inbox/::${cleanReply}`);
+        const boxPos = await send('Runtime.evaluate', {
+          expression: `(() => {
+            const tb = document.querySelector('div[role="textbox"][contenteditable="true"]');
+            if (!tb) return null;
+            tb.focus();
+            const r = tb.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          })()`,
+          returnByValue: true,
+        });
+        if (boxPos?.result?.value) {
+          const { x, y } = boxPos.result.value;
+          await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+          await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+          await new Promise((r) => setTimeout(r, 200));
+          await send('Input.insertText', { text: cleanReply });
+          await new Promise((r) => setTimeout(r, 300));
+          await send('Input.dispatchKeyEvent', {
+            type: 'keyDown',
+            key: 'Enter',
+            code: 'Enter',
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          });
+          await send('Input.dispatchKeyEvent', {
+            type: 'keyUp',
+            key: 'Enter',
+            code: 'Enter',
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          });
+          delivered = true;
+        }
+        ws.close();
+      }
+    } catch (_) {}
+  }
+
+  const nowTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  if (!Array.isArray(user.notifications)) user.notifications = [];
+  user.notifications.unshift({
+    id: Date.now(),
+    time: nowTime,
+    platform: appt.platform || 'whatsapp',
+    text: `⏰ [${reasonLabel}] ${appt.customerName} (${dateText} Saat ${appt.slotKey}) müşterisine hatırlatma mesajı gönderildi.`,
+  });
+  if (user.notifications.length > 50) user.notifications.pop();
+  saveDb();
+
+  return { delivered, msgText };
+}
+
+app.post('/api/appointments/remind', async (req, res) => {
+  const { user, isAuthed } = getAuthContext(req);
+  const targetUser = user || db.users['u_905525222988'] || Object.values(db.users)[0];
+  if (!targetUser) return res.status(401).json({ ok: false, error: 'Oturum bulunamadı.' });
+  const { appointmentId, slotKey, dateIso } = req.body || {};
+  const appt = (targetUser.appointments || []).find(
+    (a) =>
+      a.status === 'approved' &&
+      (String(a.id) === String(appointmentId) ||
+        (slotKey && String(a.slotKey) === String(slotKey) && (!dateIso || !a.dateIso || a.dateIso === dateIso)))
+  );
+  if (!appt) {
+    return res.status(404).json({ ok: false, error: 'Hatırlatma gönderilecek aktif randevu bulunamadı.' });
+  }
+  appt.remindersSent = appt.remindersSent || { dayBefore: false, hourBefore: false, manualCount: 0 };
+  appt.remindersSent.manualCount = (appt.remindersSent.manualCount || 0) + 1;
+  appt.lastRemindedAt = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const { delivered, msgText } = await dispatchAppointmentReminderMessage(targetUser, appt, 'Yaklaşan Randevu Hatırlatması');
+  res.json({
+    ok: true,
+    delivered,
+    msgText,
+    user: buildSafeOpAiUser(targetUser, isAuthed),
+  });
+});
+
+// ARKA PLAN OTOMATİK RANDEVU HATIRLATMA ZAMANLAYICISI (24 Saat Kala & 1 Saat Kala)
+function startAppointmentReminderScheduler() {
+  setInterval(async () => {
+    const nowMs = Date.now();
+    for (const user of Object.values(db.users || {})) {
+      if (!user || !Array.isArray(user.appointments)) continue;
+      for (const appt of user.appointments) {
+        if (appt.status !== 'approved') continue;
+        let targetMs = appt.targetTimestampMs;
+        if (!targetMs) {
+          const dIso = appt.dateIso || toDateIsoLocal(new Date());
+          const [yy, mm, dd] = dIso.split('-').map(Number);
+          const [hh, min] = String(appt.time24 || '13:00').split(':').map(Number);
+          targetMs = new Date(yy, mm - 1, dd, hh || 13, min || 0, 0).getTime();
+          appt.targetTimestampMs = targetMs;
+        }
+        const diffMs = targetMs - nowMs;
+        appt.remindersSent = appt.remindersSent || { dayBefore: false, hourBefore: false, manualCount: 0 };
+
+        // 24 saat kala (23 ile 24.5 saat arası)
+        if (!appt.remindersSent.dayBefore && diffMs > 22.5 * 3600 * 1000 && diffMs <= 24.5 * 3600 * 1000) {
+          appt.remindersSent.dayBefore = true;
+          await dispatchAppointmentReminderMessage(user, appt, 'Yarınki Randevu Hatırlatması (24 Saat Kala)').catch(() => {});
+        }
+
+        // 1 saat kala (15 dk ile 65 dk arası)
+        if (!appt.remindersSent.hourBefore && diffMs > 15 * 60 * 1000 && diffMs <= 65 * 60 * 1000) {
+          appt.remindersSent.hourBefore = true;
+          await dispatchAppointmentReminderMessage(user, appt, 'Randevunuza 1 Saat Kaldı Hatırlatması').catch(() => {});
+        }
+      }
+    }
+  }, 60 * 1000);
+}
+startAppointmentReminderScheduler();
 
 app.post('/api/slots/reset-day', (req, res) => {
   const { user, isAuthed } = getAuthContext(req);
